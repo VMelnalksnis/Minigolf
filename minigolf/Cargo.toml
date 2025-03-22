@@ -1,0 +1,13 @@
+[package]
+name = "minigolf"
+
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+bevy_replicon = { workspace = true }
+
+serde = { workspace = true }
+

@@ -1,0 +1,19 @@
+[package]
+name = "minigolf_server"
+
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+minigolf = { path = "../minigolf" }
+
+bevy = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+
+aeronet = {workspace = true }
+aeronet_websocket = { workspace = true, features = ["server"] }
+aeronet_webtransport = { workspace = true, features = ["server"] }
+
+bevy_replicon = { workspace = true, features = ["server"] }
+aeronet_replicon = { workspace = true, features = ["server"] }
