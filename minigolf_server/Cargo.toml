@@ -9,9 +9,10 @@ authors.workspace = true
 minigolf = { path = "../minigolf" }
 
 bevy = { workspace = true }
+avian3d = { workspace = true, features = ["3d", "f32", "default-collider", "parry-f32", "bevy_scene", "bevy_picking", "debug-plugin", "parallel", "simd", "collider-from-mesh"] }
 clap = { workspace = true, features = ["derive"] }
 
-aeronet = {workspace = true }
+aeronet = { workspace = true }
 aeronet_websocket = { workspace = true, features = ["server"] }
 aeronet_webtransport = { workspace = true, features = ["server"] }
 
