@@ -3951,6 +3951,7 @@ dependencies = [
  "bevy",
  "bevy_replicon",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3970,6 +3971,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "minigolf_lobby"
+version = "0.1.0"
+dependencies = [
+ "aeronet",
+ "aeronet_websocket",
+ "bevy",
+ "clap",
+ "minigolf",
+ "serde_json",
+]
+
+[[package]]
 name = "minigolf_server"
 version = "0.1.0"
 dependencies = [
@@ -3982,6 +3995,7 @@ dependencies = [
  "bevy_replicon",
  "clap",
  "minigolf",
+ "serde_json",
 ]
 
 [[package]]

@@ -1,0 +1,17 @@
+[package]
+name = "minigolf_lobby"
+
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+minigolf = { path = "../minigolf" }
+
+bevy = { workspace = true }
+
+clap = { workspace = true, features = ["derive"] }
+
+aeronet = { workspace = true }
+aeronet_websocket = { workspace = true, features = ["server"] }
+serde_json = { workspace = true }

@@ -13,8 +13,10 @@ avian3d = { workspace = true, features = ["3d", "f32", "default-collider", "parr
 clap = { workspace = true, features = ["derive"] }
 
 aeronet = { workspace = true }
-aeronet_websocket = { workspace = true, features = ["server"] }
+aeronet_websocket = { workspace = true, features = ["server", "client"] }
 aeronet_webtransport = { workspace = true, features = ["server"] }
 
 bevy_replicon = { workspace = true, features = ["server"] }
 aeronet_replicon = { workspace = true, features = ["server"] }
+
+serde_json = { workspace = true }

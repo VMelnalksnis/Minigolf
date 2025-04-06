@@ -12,11 +12,17 @@ use {
     bevy_replicon::{prelude::*, server::increment_tick},
     core::time::Duration,
     minigolf::{LevelMesh, MinigolfPlugin, Player, PlayerInput, TICK_RATE},
+    std::{
+        convert::Into,
+        net::{IpAddr, Ipv6Addr, SocketAddr},
+    },
 };
 
 const WEB_TRANSPORT_PORT: u16 = 25565;
 
 const WEB_SOCKET_PORT: u16 = 25566;
+
+const LOBBY_ADDRESS: SocketAddr = SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 25568);
 
 #[derive(PhysicsLayer, Default)]
 enum GameLayer {
@@ -34,6 +40,9 @@ pub(crate) struct Args {
     /// Port to listen for WebSocket connections on
     #[arg(long, default_value_t = WEB_SOCKET_PORT)]
     pub(crate) ws_port: u16,
+    /// The address of the minigolf lobby server
+    #[arg(long, default_value_t = LOBBY_ADDRESS)]
+    pub(crate) lobby_address: SocketAddr,
 }
 
 impl FromWorld for Args {
@@ -164,7 +173,6 @@ fn recv_input(
 
 fn on_connected(trigger: Trigger<OnAdd, Session>, mut commands: Commands) {
     let client = trigger.entity();
-
     let player = commands
         .spawn((
             Player,

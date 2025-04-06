@@ -37,6 +37,11 @@ jobs:
           cargo build --bin minigolf_server
           sudo ls -lh ./target/debug
 
+      - name: Build lobby
+        run: |
+          cargo build --bin minigolf_lobby
+          sudo ls -lh ./target/debug
+
       - name: Build client
         run: |
           cargo build --bin minigolf_client --target wasm32-unknown-unknown

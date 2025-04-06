@@ -1,3 +1,8 @@
+use aeronet::io::bytes::Bytes;
+use aeronet::transport::AeronetTransportPlugin;
+use aeronet_websocket::client::WebSocketClientPlugin;
+use minigolf::lobby::{GameClientPacket, GameServerPacket};
+use std::ops::RangeFull;
 use {
     crate::server::Args,
     aeronet::io::{
@@ -6,7 +11,10 @@ use {
         server::Server,
     },
     aeronet_replicon::server::{AeronetRepliconServer, AeronetRepliconServerPlugin},
-    aeronet_websocket::server::{WebSocketServer, WebSocketServerPlugin},
+    aeronet_websocket::{
+        client::WebSocketClient,
+        server::{WebSocketServer, WebSocketServerPlugin},
+    },
     aeronet_webtransport::{
         cert,
         server::{SessionRequest, SessionResponse, WebTransportServer, WebTransportServerPlugin},
@@ -24,6 +32,7 @@ pub(crate) struct ServerNetworkPlugin;
 impl Plugin for ServerNetworkPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((WebTransportServerPlugin, WebSocketServerPlugin))
+            .add_plugins((WebSocketClientPlugin, AeronetTransportPlugin))
             .add_plugins((
                 RepliconPlugins.set(ServerPlugin {
                     // 1 frame lasts `1.0 / TICK_RATE` anyway
@@ -36,8 +45,27 @@ impl Plugin for ServerNetworkPlugin {
             .add_observer(on_session_request)
             .add_observer(on_connected)
             .add_observer(on_disconnected)
-            .add_systems(Startup, (open_web_transport_server, open_web_socket_server));
+            .add_systems(
+                Startup,
+                (
+                    open_web_transport_server,
+                    open_web_socket_server,
+                    connect_to_lobby,
+                ),
+            )
+            .add_systems(FixedUpdate, recv_lobby_messages);
     }
+}
+
+fn connect_to_lobby(mut commands: Commands, args: Res<Args>) {
+    let config = aeronet_websocket::client::ClientConfig::builder().with_no_encryption();
+    let target = format!("ws://{}", args.lobby_address);
+
+    info!("Connecting to lobby server at {}", target);
+
+    commands
+        .spawn(Name::new("Lobby server connection"))
+        .queue(WebSocketClient::connect(config, target));
 }
 
 //
@@ -120,29 +148,79 @@ fn on_session_request(mut request: Trigger<SessionRequest>, clients: Query<&Pare
     request.respond(SessionResponse::Accepted);
 }
 
-fn on_connected(trigger: Trigger<OnAdd, Session>, clients: Query<&Parent>) {
+fn on_connected(
+    trigger: Trigger<OnAdd, Session>,
+    servers: Query<&Parent>,
+    names: Query<&Name>,
+    mut sessions: Query<&mut Session>,
+) {
     let client = trigger.entity();
-    let Ok(server) = clients.get(client).map(Parent::get) else {
+
+    if let Ok(server) = servers.get(client).map(Parent::get) {
+        info!("{client} connected to {server}");
+    } else if let Ok(name) = names.get(client) {
+        info!("Connected to {name}");
+        let mut session = sessions.get_mut(client).unwrap();
+
+        let message: String = GameClientPacket::Hello.into();
+        session.send.push(Bytes::from_owner(message));
+    } else {
         return;
     };
-    info!("{client} connected to {server}");
 }
 
-fn on_disconnected(trigger: Trigger<Disconnected>, clients: Query<&Parent>) {
-    let client = trigger.entity();
-    let Ok(server) = clients.get(client).map(Parent::get) else {
-        return;
-    };
+fn recv_lobby_messages(
+    mut sessions: Query<&mut Session, With<WebSocketClient>>,
+    servers: Query<&LocalAddr, With<WebSocketServer>>,
+) {
+    for mut session in &mut sessions {
+        let session = &mut *session;
 
-    match &trigger.reason {
-        DisconnectReason::User(reason) => {
-            info!("{client} disconnected from {server} by user: {reason}");
-        }
-        DisconnectReason::Peer(reason) => {
-            info!("{client} disconnected from {server} by peer: {reason}");
-        }
-        DisconnectReason::Error(err) => {
-            warn!("{client} disconnected from {server} due to error: {err:?}");
+        for message in session.recv.drain(RangeFull::default()) {
+            let server_packet = GameServerPacket::from(message.payload.as_ref());
+            info!("{server_packet:?}");
+
+            match server_packet {
+                GameServerPacket::Hello => {
+                    let server_address = servers.get_single().unwrap().0;
+                    let response: String = GameClientPacket::Available(server_address).into();
+                    session.send.push(Bytes::from_owner(response));
+                }
+            }
         }
     }
+}
+
+fn on_disconnected(trigger: Trigger<Disconnected>, servers: Query<&Parent>, names: Query<&Name>) {
+    let client = trigger.entity();
+
+    if let Ok(server) = servers.get(client).map(Parent::get) {
+        match &trigger.reason {
+            DisconnectReason::User(reason) => {
+                info!("{client} disconnected from {server} by user: {reason}");
+            }
+            DisconnectReason::Peer(reason) => {
+                info!("{client} disconnected from {server} by peer: {reason}");
+            }
+            DisconnectReason::Error(err) => {
+                warn!("{client} disconnected from {server} due to error: {err:?}");
+            }
+        }
+    } else if let Ok(name) = names.get(client) {
+        match &trigger.reason {
+            DisconnectReason::User(reason) => {
+                info!("Disconnected from {name} by user: {reason}");
+            }
+            DisconnectReason::Peer(reason) => {
+                info!("Disconnected from {name} by peer: {reason}");
+            }
+            DisconnectReason::Error(err) => {
+                warn!("Disconnected from {name} due to error: {err:?}");
+            }
+        }
+
+        info!("Disconnected from {name}");
+    } else {
+        return;
+    };
 }

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["minigolf", "minigolf_client", "minigolf_server"]
+members = ["minigolf", "minigolf_client", "minigolf_lobby", "minigolf_server"]
 
 [workspace.package]
 version = "0.1.0"
@@ -21,6 +21,7 @@ aeronet_webtransport = { version = "0.12.0", default-features = false }
 aeronet_replicon = { version = "0.13.0", default-features = false }
 
 serde = "1.0.219"
+serde_json = "1.0.140"
 
 clap = "4.5.32"
 

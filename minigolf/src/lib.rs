@@ -1,3 +1,5 @@
+pub mod lobby;
+
 use {
     bevy::prelude::*,
     bevy_replicon::prelude::*,
