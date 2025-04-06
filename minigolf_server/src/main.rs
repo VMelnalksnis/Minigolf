@@ -4,6 +4,8 @@ fn main() {
 }
 
 #[cfg(not(target_family = "wasm"))]
+mod network;
+#[cfg(not(target_family = "wasm"))]
 mod server;
 
 #[cfg(not(target_family = "wasm"))]
