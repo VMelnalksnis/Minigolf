@@ -1,0 +1,43 @@
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/cache@v4.2.3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/git/
+            ~/.cargo/registry/
+            ./target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo- # Restore stale cache in order to still speed up build
+
+      - name: Set up rust
+        run: |
+          rustup update
+          rustup target add wasm32-unknown-unknown
+
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential gcc make pkg-config libasound2-dev libudev-dev
+
+      - name: Build server
+        run: |
+          cargo build --bin minigolf_server
+          sudo ls -lh ./target/debug
+
+      - name: Build client
+        run: |
+          cargo build --bin minigolf_client --target wasm32-unknown-unknown
+          sudo ls -lh ./target/wasm32-unknown-unknown/debug
