@@ -1,5 +1,5 @@
 use {
-    crate::{web_socket_config, web_transport_config},
+    crate::network::{web_socket_config, web_transport_config},
     aeronet::io::{
         Session, SessionEndpoint,
         connection::{Disconnect, DisconnectReason, Disconnected},
