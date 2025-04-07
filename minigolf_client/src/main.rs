@@ -49,6 +49,9 @@ fn main() -> AppExit {
         .run()
 }
 
+#[derive(Debug, Component, Reflect)]
+struct LocalPlayer;
+
 #[derive(Debug, Clone, Component, Deref, DerefMut, Reflect)]
 struct AccumulatedInputs {
     input: Vec2,
@@ -95,6 +98,7 @@ fn on_player_added(
     let player_mesh_handle: Handle<Mesh> = server.load("Player.glb#Mesh0/Primitive0");
 
     commands.entity(entity).insert((
+        LocalPlayer,
         AccumulatedInputs { input: Vec2::ZERO },
         Mesh3d(player_mesh_handle.clone()),
         MeshMaterial3d(materials.add(StandardMaterial {
@@ -160,7 +164,7 @@ fn handle_inputs(mut inputs: EventWriter<PlayerInput>, input: Res<ButtonInput<Ke
 
 fn launch_inputs(
     mut mouse_motion_events: EventReader<MouseMotion>,
-    mut inputs: Query<&mut AccumulatedInputs>,
+    mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>,
 ) {
     for ev in mouse_motion_events.read() {
         let Ok(mut input) = inputs.get_single_mut() else {
@@ -172,7 +176,10 @@ fn launch_inputs(
     }
 }
 
-fn handle_mouse(mut writer: EventWriter<PlayerInput>, mut inputs: Query<&mut AccumulatedInputs>) {
+fn handle_mouse(
+    mut writer: EventWriter<PlayerInput>,
+    mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>,
+) {
     for mut input in &mut inputs {
         if input.input == Vec2::ZERO {
             continue;
@@ -185,7 +192,7 @@ fn handle_mouse(mut writer: EventWriter<PlayerInput>, mut inputs: Query<&mut Acc
         input.input = Vec2::ZERO;
     }
 }
-fn cancel_mouse(mut inputs: Query<&mut AccumulatedInputs>) {
+fn cancel_mouse(mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>) {
     for mut input in &mut inputs {
         input.input = Vec2::ZERO;
     }
@@ -193,7 +200,7 @@ fn cancel_mouse(mut inputs: Query<&mut AccumulatedInputs>) {
 
 fn camera_follow(
     mut camera: Query<&mut Transform, With<Camera3d>>,
-    player: Query<&Transform, (With<Player>, Without<Camera3d>)>,
+    player: Query<&Transform, (With<Player>, With<LocalPlayer>, Without<Camera3d>)>,
 ) {
     let Ok(mut camera_transform) = camera.get_single_mut() else {
         return;
@@ -222,7 +229,7 @@ fn scroll_events(
 }
 
 fn draw_gizmos(
-    player_q: Query<&Transform, With<Player>>,
+    player_q: Query<&Transform, (With<Player>, With<LocalPlayer>)>,
     input_q: Query<&AccumulatedInputs>,
     mut gizmos: Gizmos,
 ) {
