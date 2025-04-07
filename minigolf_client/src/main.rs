@@ -55,17 +55,19 @@ struct AccumulatedInputs {
 }
 
 fn setup_level(mut commands: Commands) {
-    let canvas: HtmlCanvasElement = web_sys::window()
-        .unwrap()
-        .document()
-        .unwrap()
-        .query_selector("canvas")
-        .unwrap()
-        .unwrap()
-        .unchecked_into();
-    let style = canvas.style();
-    style.set_property("width", "100%").unwrap();
-    style.set_property("height", "100%").unwrap();
+    if cfg!(target_family = "wasm") {
+        let canvas: HtmlCanvasElement = web_sys::window()
+            .unwrap()
+            .document()
+            .unwrap()
+            .query_selector("canvas")
+            .unwrap()
+            .unwrap()
+            .unchecked_into();
+        let style = canvas.style();
+        style.set_property("width", "100%").unwrap();
+        style.set_property("height", "100%").unwrap();
+    }
 
     // light
     commands.spawn((
