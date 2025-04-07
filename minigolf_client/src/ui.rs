@@ -21,7 +21,11 @@ pub(crate) struct ClientUiPlugin;
 
 impl Plugin for ClientUiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(EguiPlugin)
+        app
+            .register_type::<GlobalUi>()
+            .register_type::<WebTransportUi>()
+            .register_type::<WebSocketUi>()
+            .add_plugins(EguiPlugin)
             .add_plugins(
                 WorldInspectorPlugin::default().run_if(input_toggle_active(true, KeyCode::Escape)),
             )
@@ -35,19 +39,19 @@ impl Plugin for ClientUiPlugin {
     }
 }
 
-#[derive(Debug, Default, Resource)]
+#[derive(Debug, Default, Resource, Reflect)]
 struct GlobalUi {
     session_id: usize,
     log: Vec<String>,
 }
 
-#[derive(Debug, Default, Resource)]
+#[derive(Debug, Default, Resource, Reflect)]
 struct WebTransportUi {
     target: String,
     cert_hash: String,
 }
 
-#[derive(Debug, Default, Resource)]
+#[derive(Debug, Default, Resource, Reflect)]
 struct WebSocketUi {
     target: String,
 }

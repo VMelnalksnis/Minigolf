@@ -25,7 +25,10 @@ pub enum GameState {
 
 impl Plugin for MinigolfPlugin {
     fn build(&self, app: &mut App) {
-        app.init_state::<GameState>()
+        app
+            .register_type::<Player>()
+            .register_type::<LevelMesh>()
+            .register_type::<PlayerInput>().init_state::<GameState>()
             .enable_state_scoped_entities::<GameState>()
             .replicate::<Player>()
             .replicate::<Transform>()
@@ -36,18 +39,18 @@ impl Plugin for MinigolfPlugin {
 }
 
 /// Marker component for a player in the game.
-#[derive(Debug, Clone, Component, Serialize, Deserialize)]
+#[derive(Debug, Clone, Component, Serialize, Deserialize, Reflect)]
 #[require(StateScoped<GameState>(|| StateScoped(GameState::Playing)))]
 pub struct Player;
 
-#[derive(Debug, Clone, Component, Serialize, Deserialize)]
+#[derive(Debug, Clone, Component, Serialize, Deserialize, Reflect)]
 #[require(StateScoped<GameState>(|| StateScoped(GameState::Playing)))]
 pub struct LevelMesh {
     pub asset: String,
 }
 
 /// Player's inputs that they send to control their box.
-#[derive(Debug, Clone, Default, Event, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Event, Serialize, Deserialize, Reflect)]
 pub struct PlayerInput {
     /// Lateral movement vector.
     ///

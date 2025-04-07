@@ -18,6 +18,8 @@ use {
 
 fn main() -> AppExit {
     App::new()
+        .register_type::<LocalPlayer>()
+        .register_type::<AccumulatedInputs>()
         .add_plugins((
             DefaultPlugins,
             ClientUiPlugin,
