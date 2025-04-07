@@ -171,8 +171,12 @@ fn recv_input(
 // server logic
 //
 
-fn on_connected(trigger: Trigger<OnAdd, Session>, mut commands: Commands) {
+fn on_connected(trigger: Trigger<OnAdd, Session>, parent: Query<&Parent>, mut commands: Commands) {
     let client = trigger.entity();
+    let Ok(_) = parent.get(client) else {
+        return;
+    };
+
     let player = commands
         .spawn((
             Player,
