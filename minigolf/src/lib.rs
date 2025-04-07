@@ -1,6 +1,7 @@
 pub mod lobby;
 
 use {
+    crate::lobby::PlayerId,
     bevy::prelude::*,
     bevy_replicon::prelude::*,
     serde::{Deserialize, Serialize},
@@ -25,10 +26,10 @@ pub enum GameState {
 
 impl Plugin for MinigolfPlugin {
     fn build(&self, app: &mut App) {
-        app
-            .register_type::<Player>()
+        app.register_type::<Player>()
             .register_type::<LevelMesh>()
-            .register_type::<PlayerInput>().init_state::<GameState>()
+            .register_type::<PlayerInput>()
+            .init_state::<GameState>()
             .enable_state_scoped_entities::<GameState>()
             .replicate::<Player>()
             .replicate::<Transform>()
@@ -41,7 +42,23 @@ impl Plugin for MinigolfPlugin {
 /// Marker component for a player in the game.
 #[derive(Debug, Clone, Component, Serialize, Deserialize, Reflect)]
 #[require(StateScoped<GameState>(|| StateScoped(GameState::Playing)))]
-pub struct Player;
+pub struct Player {
+    pub id: PlayerId,
+}
+
+impl Player {
+    pub fn new() -> Self {
+        Player {
+            id: PlayerId::new(),
+        }
+    }
+}
+
+impl From<PlayerId> for Player {
+    fn from(id: PlayerId) -> Self {
+        Player { id }
+    }
+}
 
 #[derive(Debug, Clone, Component, Serialize, Deserialize, Reflect)]
 #[require(StateScoped<GameState>(|| StateScoped(GameState::Playing)))]

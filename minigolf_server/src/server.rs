@@ -179,7 +179,7 @@ fn on_connected(trigger: Trigger<OnAdd, Session>, parent: Query<&Parent>, mut co
 
     let player = commands
         .spawn((
-            Player,
+            Player::new(),
             PlayerInput::default(),
             Name::new("Player"),
             Replicated,

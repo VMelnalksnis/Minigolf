@@ -1,9 +1,12 @@
 use {
-    crate::Args,
+    crate::{Args, LobbyMember},
     aeronet::{io::Session, io::bytes::Bytes, io::connection::LocalAddr, io::server::Server},
     aeronet_websocket::server::{ServerConfig, WebSocketServer},
     bevy::prelude::*,
-    minigolf::lobby::{GameClientPacket, GameServerPacket},
+    minigolf::{
+        lobby::LobbyId,
+        lobby::{GameClientPacket, GameServerPacket},
+    },
     std::{net::SocketAddr, ops::RangeFull},
 };
 
@@ -17,12 +20,18 @@ impl Plugin for GameServerPlugin {
             .add_observer(on_connected)
             .add_observer(on_game_server_added)
             .add_observer(on_game_server_removed)
-            .add_systems(FixedUpdate, handle_messages);
+            .add_systems(FixedUpdate, handle_messages)
+            .add_event::<StartGame>()
+            .add_systems(FixedUpdate, start_game)
+            .add_event::<GameStarted>();
     }
 }
 
 #[derive(Debug, Component)]
 struct GamerServerListener;
+
+#[derive(Debug, Component)]
+struct GameServerSession;
 
 #[derive(Debug, Component)]
 struct GameServer {
@@ -61,6 +70,7 @@ fn on_connected(
     trigger: Trigger<OnAdd, Session>,
     servers: Query<&Parent>,
     games: Query<&GamerServerListener>,
+    mut commands: Commands,
 ) {
     let client = trigger.entity();
     let server = servers
@@ -70,20 +80,18 @@ fn on_connected(
 
     if let Ok(_) = games.get(server) {
         info!("Game server {client} connected to {server}");
+        commands.entity(client).insert(GameServerSession);
     }
 }
 
 fn handle_messages(
-    mut sessions: Query<(Entity, &mut Session, &Parent)>,
-    game_servers: Query<&GamerServerListener>,
+    mut sessions: Query<(Entity, &mut Session), With<GameServerSession>>,
+    mut game_started_writer: EventWriter<GameStarted>,
     mut commands: Commands,
 ) {
-    for (entity, mut session, parent) in &mut sessions {
-        let Ok(_) = game_servers.get(parent.get()) else {
-            continue;
-        };
-
+    for (entity, mut session) in &mut sessions {
         let session = &mut *session;
+
         for message in session.recv.drain(RangeFull::default()) {
             let client_packet = GameClientPacket::from(message.payload.as_ref());
             info!("{client_packet:?}");
@@ -102,6 +110,10 @@ fn handle_messages(
 
                 GameClientPacket::Busy => {
                     todo!()
+                }
+
+                GameClientPacket::GameCreated(lobby_id) => {
+                    game_started_writer.send(GameStarted { lobby_id });
                 }
             }
 
@@ -128,4 +140,36 @@ fn on_game_server_removed(_trigger: Trigger<OnRemove, GameServer>, servers: Quer
     for server in &servers {
         info!("Available server {server:?}");
     }
+}
+
+#[derive(Debug, Event)]
+pub(crate) struct StartGame {
+    pub(crate) lobby_id: LobbyId,
+}
+
+impl From<&LobbyMember> for StartGame {
+    fn from(value: &LobbyMember) -> Self {
+        StartGame {
+            lobby_id: value.lobby_id,
+        }
+    }
+}
+
+fn start_game(
+    mut start_game_reader: EventReader<StartGame>,
+    mut servers: Query<&mut Session, With<GameServer>>,
+) {
+    for start_game in start_game_reader.read() {
+        for mut server in &mut servers {
+            let message: String = GameServerPacket::CreateGame(start_game.lobby_id).into();
+            server.send.push(Bytes::from_owner(message));
+
+            break;
+        }
+    }
+}
+
+#[derive(Debug, Event)]
+pub(crate) struct GameStarted {
+    pub(crate) lobby_id: LobbyId,
 }

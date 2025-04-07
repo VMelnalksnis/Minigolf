@@ -6,7 +6,9 @@ use {
     aeronet_websocket::server::WebSocketServerPlugin,
     bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*},
     core::time::Duration,
+    minigolf::lobby::LobbyId,
     std::net::{IpAddr, Ipv6Addr, SocketAddr},
+    uuid::Uuid,
 };
 
 const TICK_RATE: f64 = 32.0;
@@ -47,7 +49,32 @@ impl FromWorld for Args {
     }
 }
 
+#[derive(Debug, Component, Reflect, Copy, Clone)]
+struct LobbyMember {
+    lobby_id: LobbyId,
+}
+
+impl LobbyMember {
+    fn new() -> Self {
+        LobbyMember {
+            lobby_id: Uuid::new_v4().as_u64_pair().0,
+        }
+    }
+}
+
+impl From<LobbyId> for LobbyMember {
+    fn from(value: LobbyId) -> Self {
+        LobbyMember { lobby_id: value }
+    }
+}
+
 #[derive(Debug, Component, Reflect)]
 struct Lobby {
     owner: Entity,
+}
+
+impl Lobby {
+    fn new(owner: Entity) -> Self {
+        Lobby { owner }
+    }
 }

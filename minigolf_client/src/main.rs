@@ -220,8 +220,6 @@ fn scroll_events(
     mut mouse_scroll_events: EventReader<MouseWheel>,
 ) {
     for mouse_wheel in mouse_scroll_events.read() {
-        info!("{mouse_wheel:?}");
-
         let Ok(mut camera_transform) = camera.get_single_mut() else {
             continue;
         };

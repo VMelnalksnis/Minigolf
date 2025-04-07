@@ -1,5 +1,8 @@
 use {
-    crate::{Args, Lobby},
+    crate::{
+        Args, Lobby, LobbyMember,
+        game::{GameStarted, StartGame},
+    },
     aeronet::{io::Session, io::bytes::Bytes, io::connection::LocalAddr, io::server::Server},
     aeronet_websocket::server::{ServerConfig, WebSocketServer},
     bevy::prelude::*,
@@ -15,12 +18,17 @@ impl Plugin for UserPlugin {
         app.add_systems(Startup, open_listener)
             .add_observer(on_opened)
             .add_observer(on_connected)
-            .add_systems(FixedUpdate, handle_messages);
+            .add_observer(on_lobby_id_added)
+            .add_systems(FixedUpdate, handle_messages)
+            .add_systems(FixedUpdate, game_started);
     }
 }
 
 #[derive(Debug, Component)]
 struct UserListener;
+
+#[derive(Debug, Component)]
+struct UserSession;
 
 fn open_listener(mut commands: Commands, args: Res<Args>) {
     let config = ServerConfig::builder()
@@ -54,6 +62,7 @@ fn on_connected(
     trigger: Trigger<OnAdd, Session>,
     servers: Query<&Parent>,
     users: Query<&UserListener>,
+    mut commands: Commands,
 ) {
     let client = trigger.entity();
     let server = servers
@@ -63,20 +72,19 @@ fn on_connected(
 
     if let Ok(_) = users.get(server) {
         info!("User {client} connected to {server}");
+        commands.entity(client).insert(UserSession);
     }
 }
 
 fn handle_messages(
-    mut sessions: Query<(Entity, &mut Session, &Parent)>,
-    users: Query<&UserListener>,
+    mut start_game_writer: EventWriter<StartGame>,
+    mut sessions: Query<(Entity, &mut Session), With<UserSession>>,
+    members: Query<&LobbyMember>,
     mut commands: Commands,
 ) {
-    for (entity, mut session, parent) in &mut sessions {
-        let Ok(_) = users.get(parent.get()) else {
-            continue;
-        };
-
+    for (user_session, mut session) in &mut sessions {
         let session = &mut *session;
+
         for message in session.recv.drain(RangeFull::default()) {
             let client_packet = UserClientPacket::from(message.payload.as_ref());
             info!("{client_packet:?}");
@@ -88,16 +96,88 @@ fn handle_messages(
                 }
 
                 UserClientPacket::CreateLobby => {
-                    let lobby = commands.spawn(Lobby { owner: entity }).id();
-                    let lobby_name = format!("{}", lobby);
-                    let response: String = UserServerPacket::LobbyCreated(&lobby_name).into();
+                    let lobby_member = LobbyMember::new();
+                    let lobby = commands
+                        .spawn((Lobby::new(user_session), lobby_member))
+                        .id();
+
+                    let response: String =
+                        UserServerPacket::LobbyCreated(lobby_member.lobby_id).into();
+                    session.send.push(Bytes::from_owner(response));
+
+                    commands.entity(lobby).insert(lobby_member);
+                    commands.entity(user_session).insert(lobby_member);
+                }
+
+                UserClientPacket::JoinLobby(id) => {
+                    commands.entity(user_session).insert(LobbyMember::from(id));
+
+                    let response: String = UserServerPacket::LobbyJoined(id).into();
                     session.send.push(Bytes::from_owner(response));
                 }
 
-                UserClientPacket::JoinLobby(_) => {
-                    todo!()
+                UserClientPacket::ListLobbies => {
+                    let ids = members
+                        .iter()
+                        .map(|member| member.lobby_id)
+                        .collect::<Vec<_>>();
+                    let response: String = UserServerPacket::AvailableLobbies(ids).into();
+                    session.send.push(Bytes::from_owner(response));
+                }
+
+                UserClientPacket::StartGame => {
+                    let user_lobby = members.get(user_session).unwrap();
+                    start_game_writer.send(user_lobby.into());
                 }
             };
+        }
+    }
+}
+
+fn on_lobby_id_added(
+    trigger: Trigger<OnAdd, LobbyMember>,
+    world: &World,
+    lobby_ids: Query<(Entity, &LobbyMember)>,
+) {
+    let entity = trigger.entity();
+    let (_, lobby_id) = lobby_ids.get(entity).unwrap();
+
+    println!(
+        "Added lobby id {:?} {:?}",
+        lobby_id,
+        world
+            .inspect_entity(entity)
+            .map(|info| info.name())
+            .collect::<Vec<_>>()
+    );
+
+    lobby_ids
+        .into_iter()
+        .filter(|(_, id)| id.lobby_id == lobby_id.lobby_id)
+        .for_each(|(e, id)| {
+            println!(
+                "Lobby {:?} contains {:?}",
+                id,
+                world
+                    .inspect_entity(e)
+                    .map(|info| info.name())
+                    .collect::<Vec<_>>()
+            );
+        });
+}
+
+fn game_started(
+    mut game_started_reader: EventReader<GameStarted>,
+    mut members: Query<(&LobbyMember, &mut Session), With<UserSession>>,
+) {
+    for game_started in game_started_reader.read() {
+        for (id, mut session) in &mut members {
+            if id.lobby_id != game_started.lobby_id {
+                continue;
+            }
+
+            let message: String = UserServerPacket::GameStarted(id.lobby_id).into();
+            session.send.push(Bytes::from_owner(message));
         }
     }
 }

@@ -186,6 +186,10 @@ fn recv_lobby_messages(
                     let response: String = GameClientPacket::Available(server_address).into();
                     session.send.push(Bytes::from_owner(response));
                 }
+
+                GameServerPacket::CreateGame(_) => {
+                    todo!()
+                }
             }
         }
     }

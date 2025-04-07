@@ -1,15 +1,13 @@
+use aeronet::io::bytes::Bytes;
+use minigolf::lobby::{UserClientPacket, UserServerPacket};
 use {
-    crate::network::{web_socket_config, web_transport_config},
+    crate::network::web_socket_config,
     aeronet::io::{
         Session, SessionEndpoint,
         connection::{Disconnect, DisconnectReason, Disconnected},
     },
-    aeronet_replicon::client::AeronetRepliconClient,
     aeronet_websocket::client::WebSocketClient,
-    aeronet_webtransport::client::WebTransportClient,
-    bevy::{
-        ecs::query::QuerySingleError, input::common_conditions::input_toggle_active, prelude::*,
-    },
+    bevy::{input::common_conditions::input_toggle_active, prelude::*},
     bevy_egui::{EguiContexts, EguiPlugin, egui},
     bevy_inspector_egui::quick::WorldInspectorPlugin,
     bevy_replicon::prelude::*,
@@ -21,91 +19,224 @@ pub(crate) struct ClientUiPlugin;
 
 impl Plugin for ClientUiPlugin {
     fn build(&self, app: &mut App) {
-        app
-            .register_type::<GlobalUi>()
-            .register_type::<WebTransportUi>()
-            .register_type::<WebSocketUi>()
+        app.register_type::<GlobalUi>()
+            .register_type::<LobbyServerUi>()
+            .register_type::<ServerState>()
+            .init_state::<ServerState>()
             .add_plugins(EguiPlugin)
             .add_plugins(
                 WorldInspectorPlugin::default().run_if(input_toggle_active(true, KeyCode::Escape)),
             )
             .init_resource::<GlobalUi>()
-            .init_resource::<WebTransportUi>()
-            .init_resource::<WebSocketUi>()
-            .add_systems(Update, (web_transport_ui, web_socket_ui, global_ui).chain())
+            .init_resource::<LobbyServerUi>()
+            .add_systems(
+                OnEnter(ServerState::LobbyServer),
+                connect_to_default_lobby_server,
+            )
+            .add_systems(Update, lobby_server_ui.in_set(LobbyServerUiSet))
+            .configure_sets(
+                Update,
+                LobbyServerUiSet.run_if(in_state(ServerState::LobbyServer)),
+            )
+            .add_systems(Update, handle_lobby_server_packets)
+            .add_systems(Update, global_ui)
             .add_observer(on_connecting)
-            .add_observer(on_connected)
-            .add_observer(on_disconnected);
+            .add_observer(on_connected_to_lobby_server)
+            .add_observer(on_disconnected)
+            .init_resource::<LobbiesUi>()
+            .configure_sets(Update, LobbiesUiSet.run_if(in_state(ServerState::Lobbies)))
+            .add_systems(Update, lobbies_ui.in_set(LobbiesUiSet));
     }
+}
+
+#[derive(States, Reflect, Default, Debug, Clone, PartialEq, Eq, Hash)]
+enum ServerState {
+    #[default]
+    LobbyServer,
+    Lobbies,
+    Lobby,
+    GameServer,
+}
+
+/// Systems for selecting and connecting to a lobby server
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+struct LobbyServerUiSet;
+
+fn handle_lobby_server_packets(
+    mut sessions: Query<&mut Session, With<LobbyServerSession>>,
+    mut server_state: ResMut<NextState<ServerState>>,
+) {
+    let Ok(mut lobby_session) = sessions.get_single_mut() else {
+        return;
+    };
+
+    for received_packet in lobby_session.recv.drain(..) {
+        let packet = UserServerPacket::from(received_packet.payload.as_ref());
+        info!("Lobby packet received: {:?}", packet);
+
+        match packet {
+            UserServerPacket::Hello => {}
+            UserServerPacket::LobbyCreated(_) => {
+                server_state.set(ServerState::Lobby);
+            }
+            UserServerPacket::AvailableLobbies(_) => {}
+            UserServerPacket::LobbyJoined(_) => {
+                server_state.set(ServerState::Lobby);
+            }
+            UserServerPacket::GameStarted(_) => {
+                server_state.set(ServerState::GameServer);
+            }
+            UserServerPacket::PlayerJoined(_) => {}
+            UserServerPacket::PlayerLeft(_) => {}
+        }
+    }
+}
+
+#[derive(Resource, Reflect, Debug, Default)]
+struct LobbyServerUi {
+    target: String,
+}
+
+#[derive(Debug, Component)]
+struct LobbyServerSession;
+
+const DEFAULT_LOBBY_TARGET: &str = "ws://localhost:25567";
+
+fn connect_to_default_lobby_server(mut global_ui: ResMut<GlobalUi>, mut commands: Commands) {
+    let target = DEFAULT_LOBBY_TARGET;
+    let config = web_socket_config();
+
+    global_ui.session_id += 1;
+    let name = format!("Lobby server {}. {target}", global_ui.session_id);
+
+    commands
+        .spawn((Name::new(name), LobbyServerSession))
+        .queue(WebSocketClient::connect(config, target));
+}
+
+fn lobby_server_ui(
+    mut commands: Commands,
+    mut egui: EguiContexts,
+    mut global_ui: ResMut<GlobalUi>,
+    mut ui_state: ResMut<LobbyServerUi>,
+) {
+    egui::Window::new("Select lobby server").show(egui.ctx_mut(), |ui| {
+        let enter_pressed = ui.input(|state| state.key_pressed(egui::Key::Enter));
+
+        let mut connect = false;
+        ui.horizontal(|ui| {
+            let connect_resp = ui.add(
+                egui::TextEdit::singleline(&mut ui_state.target)
+                    .hint_text(format!("{DEFAULT_LOBBY_TARGET} | [enter] to connect")),
+            );
+            connect |= connect_resp.lost_focus() && enter_pressed;
+            connect |= ui.button("Connect").clicked();
+        });
+
+        if connect {
+            let mut target = ui_state.target.clone();
+            if target.is_empty() {
+                DEFAULT_LOBBY_TARGET.clone_into(&mut target);
+            }
+
+            let config = web_socket_config();
+
+            global_ui.session_id += 1;
+            let name = format!("{}. {target}", global_ui.session_id);
+            commands
+                .spawn((Name::new(name), LobbyServerSession))
+                .queue(WebSocketClient::connect(config, target));
+        }
+    });
+}
+
+fn on_connected_to_lobby_server(
+    trigger: Trigger<OnAdd, Session>,
+    lobby_servers: Query<(&Session, &Name), With<LobbyServerSession>>,
+    mut next_state: ResMut<NextState<ServerState>>,
+) {
+    let entity = trigger.entity();
+    let Ok((_session, name)) = lobby_servers.get(entity) else {
+        return;
+    };
+
+    info!("{name} connected");
+    next_state.set(ServerState::Lobbies);
+}
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+struct LobbiesUiSet;
+
+#[derive(Resource, Reflect, Debug, Default)]
+struct LobbiesUi {
+    lobby_id: String,
+}
+
+fn lobbies_ui(
+    mut egui: EguiContexts,
+    mut lobbies_ui: ResMut<LobbiesUi>,
+    mut lobby_session: Query<&mut Session, With<LobbyServerSession>>,
+) {
+    egui::Window::new("Select lobby").show(egui.ctx_mut(), |ui| {
+        ui.horizontal(|ui| {
+            ui.text_edit_singleline(&mut lobbies_ui.lobby_id);
+
+            if ui.button("Join lobby").clicked() {
+                info!("Joining lobby {}", lobbies_ui.lobby_id);
+
+                let mut session = lobby_session.single_mut();
+                let request: String = UserClientPacket::JoinLobby(lobbies_ui.lobby_id.parse().unwrap()).into();
+                session.send.push(Bytes::from(request));
+            }
+        });
+        ui.horizontal(|ui| {
+            if ui.button("Create lobby").clicked() {
+                info!("Creating lobby");
+
+                let mut session = lobby_session.single_mut();
+                let request: String = UserClientPacket::CreateLobby.into();
+                session.send.push(Bytes::from(request));
+            }
+        })
+    });
 }
 
 #[derive(Debug, Default, Resource, Reflect)]
 struct GlobalUi {
     session_id: usize,
-    log: Vec<String>,
 }
 
-#[derive(Debug, Default, Resource, Reflect)]
-struct WebTransportUi {
-    target: String,
-    cert_hash: String,
-}
-
-#[derive(Debug, Default, Resource, Reflect)]
-struct WebSocketUi {
-    target: String,
-}
-
-fn on_connecting(
-    trigger: Trigger<OnAdd, SessionEndpoint>,
-    names: Query<&Name>,
-    mut ui_state: ResMut<GlobalUi>,
-) {
+fn on_connecting(trigger: Trigger<OnAdd, SessionEndpoint>, names: Query<&Name>) {
     let entity = trigger.entity();
     let name = names
         .get(entity)
         .expect("our session entity should have a name");
-    ui_state.log.push(format!("{name} connecting"));
+
+    info!("{name} connecting");
 }
 
-fn on_connected(
-    trigger: Trigger<OnAdd, Session>,
-    names: Query<&Name>,
-    mut ui_state: ResMut<GlobalUi>,
-) {
-    let entity = trigger.entity();
-    let name = names
-        .get(entity)
-        .expect("our session entity should have a name");
-    ui_state.log.push(format!("{name} connected"));
-}
-
-fn on_disconnected(
-    trigger: Trigger<Disconnected>,
-    names: Query<&Name>,
-    mut ui_state: ResMut<GlobalUi>,
-) {
+fn on_disconnected(trigger: Trigger<Disconnected>, names: Query<&Name>) {
     let session = trigger.entity();
     let name = names
         .get(session)
         .expect("our session entity should have a name");
-    ui_state.log.push(match &trigger.reason {
+
+    match &trigger.reason {
         DisconnectReason::User(reason) => {
-            format!("{name} disconnected by user: {reason}")
+            info!("{name} disconnected by user: {reason}");
         }
         DisconnectReason::Peer(reason) => {
-            format!("{name} disconnected by peer: {reason}")
+            info!("{name} disconnected by peer: {reason}");
         }
         DisconnectReason::Error(err) => {
-            format!("{name} disconnected due to error: {err:?}")
+            info!("{name} disconnected due to error: {err:?}");
         }
-    });
+    };
 }
 
 fn global_ui(
     mut commands: Commands,
     mut egui: EguiContexts,
-    global_ui: Res<GlobalUi>,
     sessions: Query<(Entity, &Name, Option<&Session>), With<SessionEndpoint>>,
     replicon_client: Res<RepliconClient>,
 ) {
@@ -131,8 +262,9 @@ fn global_ui(
 
             ui.label(format!("Tx {:.0}bps", stats.sent_bps));
         });
-        match sessions.get_single() {
-            Ok((session, name, connected)) => {
+
+        for (session, name, connected) in &sessions {
+            ui.horizontal(|ui| {
                 if connected.is_some() {
                     ui.label(format!("{name} connected"));
                 } else {
@@ -142,112 +274,7 @@ fn global_ui(
                 if ui.button("Disconnect").clicked() {
                     commands.trigger_targets(Disconnect::new("disconnected by user"), session);
                 }
-            }
-            Err(QuerySingleError::NoEntities(_)) => {
-                ui.label("No sessions active");
-            }
-            Err(QuerySingleError::MultipleEntities(_)) => {
-                ui.label("Multiple sessions active");
-            }
-        }
-
-        ui.separator();
-
-        for msg in &global_ui.log {
-            ui.label(msg);
-        }
-    });
-}
-
-fn web_transport_ui(
-    mut commands: Commands,
-    mut egui: EguiContexts,
-    mut global_ui: ResMut<GlobalUi>,
-    mut ui_state: ResMut<WebTransportUi>,
-    sessions: Query<(), With<Session>>,
-) {
-    const DEFAULT_TARGET: &str = "https://remote-dev:25565";
-
-    egui::Window::new("WebTransport").show(egui.ctx_mut(), |ui| {
-        if sessions.iter().next().is_some() {
-            ui.disable();
-        }
-
-        let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
-
-        let mut connect = false;
-        ui.horizontal(|ui| {
-            let connect_resp = ui.add(
-                egui::TextEdit::singleline(&mut ui_state.target)
-                    .hint_text(format!("{DEFAULT_TARGET} | [enter] to connect")),
-            );
-            connect |= connect_resp.lost_focus() && enter_pressed;
-            connect |= ui.button("Connect").clicked();
-        });
-
-        let cert_hash_resp = ui.add(
-            egui::TextEdit::singleline(&mut ui_state.cert_hash)
-                .hint_text("(optional) certificate hash"),
-        );
-        connect |= cert_hash_resp.lost_focus() && enter_pressed;
-
-        if connect {
-            let mut target = ui_state.target.clone();
-            if target.is_empty() {
-                DEFAULT_TARGET.clone_into(&mut target);
-            }
-
-            let cert_hash = ui_state.cert_hash.clone();
-            let config = web_transport_config(cert_hash);
-
-            global_ui.session_id += 1;
-            let name = format!("{}. {target}", global_ui.session_id);
-            commands
-                .spawn((Name::new(name), AeronetRepliconClient))
-                .queue(WebTransportClient::connect(config, target));
-        }
-    });
-}
-
-fn web_socket_ui(
-    mut commands: Commands,
-    mut egui: EguiContexts,
-    mut global_ui: ResMut<GlobalUi>,
-    mut ui_state: ResMut<WebSocketUi>,
-    sessions: Query<(), With<Session>>,
-) {
-    const DEFAULT_TARGET: &str = "ws://remote-dev:25566";
-
-    egui::Window::new("WebSocket").show(egui.ctx_mut(), |ui| {
-        if sessions.iter().next().is_some() {
-            ui.disable();
-        }
-
-        let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
-
-        let mut connect = false;
-        ui.horizontal(|ui| {
-            let connect_resp = ui.add(
-                egui::TextEdit::singleline(&mut ui_state.target)
-                    .hint_text(format!("{DEFAULT_TARGET} | [enter] to connect")),
-            );
-            connect |= connect_resp.lost_focus() && enter_pressed;
-            connect |= ui.button("Connect").clicked();
-        });
-
-        if connect {
-            let mut target = ui_state.target.clone();
-            if target.is_empty() {
-                DEFAULT_TARGET.clone_into(&mut target);
-            }
-
-            let config = web_socket_config();
-
-            global_ui.session_id += 1;
-            let name = format!("{}. {target}", global_ui.session_id);
-            commands
-                .spawn((Name::new(name), AeronetRepliconClient))
-                .queue(WebSocketClient::connect(config, target));
+            });
         }
     });
 }
