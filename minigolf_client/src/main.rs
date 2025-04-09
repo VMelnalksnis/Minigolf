@@ -49,7 +49,7 @@ fn main() -> AppExit {
                 draw_gizmos.in_set(InputSet),
             ),
         )
-        .add_systems(Update, (test, scroll_events))
+        .add_systems(Update, (test, scroll_events, follow_player))
         .configure_sets(
             Update,
             InputSet.run_if(in_state(GameState::Playing).and(in_state(InputState::CanMove))),
@@ -59,6 +59,22 @@ fn main() -> AppExit {
         .add_observer(on_level_mesh_added)
         .add_observer(on_disconnected)
         .run()
+}
+
+fn follow_player(
+    player: Query<&Transform, With<LocalPlayer>>,
+    mut camera: Query<&mut Transform, (With<Camera3d>, Without<LocalPlayer>)>,
+) {
+    let Ok(mut camera) = camera.get_single_mut() else {
+        return;
+    };
+
+    let position = match player.get_single() {
+        Ok(position) => position.translation.x,
+        _ => 0.0,
+    };
+
+    camera.translation.x = position - 2.5;
 }
 
 fn test(
