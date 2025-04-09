@@ -44,19 +44,24 @@ impl Plugin for MinigolfPlugin {
 #[require(StateScoped<GameState>(|| StateScoped(GameState::Playing)))]
 pub struct Player {
     pub id: PlayerId,
+    pub can_move: bool,
 }
 
 impl Player {
     pub fn new() -> Self {
         Player {
             id: PlayerId::new(),
+            can_move: false,
         }
     }
 }
 
 impl From<PlayerId> for Player {
     fn from(id: PlayerId) -> Self {
-        Player { id }
+        Player {
+            id,
+            can_move: false,
+        }
     }
 }
 

@@ -85,17 +85,29 @@ pub fn main() -> AppExit {
         .insert_resource(Time::<Fixed>::from_hz(128.0))
         .add_systems(FixedUpdate, recv_input.run_if(server_or_singleplayer))
         .add_systems(FixedUpdate, reset)
+        .add_systems(FixedUpdate, player_can_move)
         .add_systems(FixedPreUpdate, increment_tick)
         .run()
 }
 
+#[derive(Component, Debug)]
+struct LastPlayerPosition {
+    position: Vec3,
+    rotation: Quat,
+}
+
 fn reset(
     mut transforms: Query<
-        (&mut Transform, &mut LinearVelocity, &mut AngularVelocity),
+        (
+            &mut Transform,
+            &mut LinearVelocity,
+            &mut AngularVelocity,
+            &LastPlayerPosition,
+        ),
         With<Player>,
     >,
 ) {
-    for (mut transform, mut linear, mut angular) in &mut transforms {
+    for (mut transform, mut linear, mut angular, last_position) in &mut transforms {
         if transform.translation.y < -0.15 {
             linear.x = 0.0;
             linear.y = 0.0;
@@ -105,7 +117,9 @@ fn reset(
             angular.y = 0.0;
             angular.z = 0.0;
 
-            transform.translation = Vec3::new(0.0, 0.5, 0.0);
+            info!("Last position: {last_position:?}");
+            transform.translation = last_position.position;
+            transform.rotation = last_position.rotation;
             info!("{transform:?}");
         }
     }
@@ -133,7 +147,7 @@ fn recv_input(
     mut commands: Commands,
     mut inputs: EventReader<FromClient<PlayerInput>>,
     mut children: Query<&PlayerSession>,
-    mut players: Query<(&Transform, &mut PlayerInput)>,
+    mut players: Query<(&Transform, &mut PlayerInput, &Player)>,
 ) {
     for &FromClient {
         client_entity,
@@ -152,9 +166,13 @@ fn recv_input(
             continue;
         };
 
-        let Ok((transform, mut input)) = players.get_mut(session.player) else {
+        let Ok((transform, mut input, player)) = players.get_mut(session.player) else {
             continue;
         };
+
+        if !player.can_move {
+            continue;
+        }
 
         *input = new_input.clone();
 
@@ -164,6 +182,29 @@ fn recv_input(
         let force_vec = Vec3::new(input.movement.x, 0.0, input.movement.y).clamp_length_max(10.0);
         let impulse = ExternalImpulse::new(force_vec).with_persistence(false);
         commands.entity(session.player).insert(impulse);
+    }
+}
+
+fn player_can_move(
+    mut player_velocity: Query<
+        (
+            &LinearVelocity,
+            &mut Player,
+            &Transform,
+            &mut LastPlayerPosition,
+        ),
+        Changed<LinearVelocity>,
+    >,
+) {
+    for (velocity, mut player, transform, mut position) in &mut player_velocity {
+        player.can_move = *velocity == LinearVelocity::ZERO;
+
+        if player.can_move {
+            position.position = transform.translation;
+            position.rotation = transform.rotation;
+
+            info!("Last position: {position:?}");
+        }
     }
 }
 
@@ -177,17 +218,23 @@ fn on_connected(trigger: Trigger<OnAdd, Session>, parent: Query<&Parent>, mut co
         return;
     };
 
+    let initial_position = Vec3::new(0.0, 0.5, 0.0);
+
     let player = commands
         .spawn((
             Player::new(),
             PlayerInput::default(),
+            LastPlayerPosition {
+                position: initial_position,
+                rotation: Quat::IDENTITY,
+            },
             Name::new("Player"),
             Replicated,
             RigidBody::Dynamic,
             Collider::sphere(0.021336),
             CollisionLayers::new(GameLayer::Player, [GameLayer::Default]),
             Mass::from(0.04593),
-            Transform::from_xyz(0.0, 0.5, 0.0),
+            Transform::from_translation(initial_position),
             Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
             Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
             AngularDamping(3.0),

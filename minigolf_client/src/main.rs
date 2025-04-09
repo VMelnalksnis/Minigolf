@@ -30,29 +30,61 @@ fn main() -> AppExit {
         ))
         .add_systems(Startup, setup_level)
         .init_resource::<TouchState>()
+        .init_state::<InputState>()
         .add_systems(
             Update,
             (
-                handle_inputs.run_if(in_state(GameState::Playing)),
-                handle_touch.run_if(in_state(GameState::Playing)),
+                handle_inputs.in_set(InputSet),
+                handle_touch.in_set(InputSet),
                 launch_inputs
-                    .run_if(in_state(GameState::Playing).and(input_pressed(MouseButton::Left))),
-                handle_mouse.run_if(
-                    in_state(GameState::Playing).and(input_just_released(MouseButton::Left)),
-                ),
-                cancel_mouse.run_if(
-                    in_state(GameState::Playing).and(input_just_released(MouseButton::Right)),
-                ),
+                    .in_set(InputSet)
+                    .run_if(input_pressed(MouseButton::Left)),
+                handle_mouse
+                    .in_set(InputSet)
+                    .run_if(input_just_released(MouseButton::Left)),
+                cancel_mouse
+                    .in_set(InputSet)
+                    .run_if(input_just_released(MouseButton::Right)),
                 camera_follow.run_if(in_state(GameState::Playing)),
-                scroll_events,
-                draw_gizmos,
+                draw_gizmos.in_set(InputSet),
             ),
+        )
+        .add_systems(Update, (test, scroll_events))
+        .configure_sets(
+            Update,
+            InputSet.run_if(in_state(GameState::Playing).and(in_state(InputState::CanMove))),
         )
         .add_observer(on_connected)
         .add_observer(on_player_added)
         .add_observer(on_level_mesh_added)
         .add_observer(on_disconnected)
         .run()
+}
+
+fn test(
+    query: Query<&Player, (Changed<Player>, With<LocalPlayer>)>,
+    mut input_state: ResMut<NextState<InputState>>,
+) {
+    let Ok(player) = query.get_single() else {
+        return;
+    };
+
+    let next_state = match player.can_move {
+        true => InputState::CanMove,
+        false => InputState::CannotMove,
+    };
+
+    input_state.set(next_state);
+}
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+struct InputSet;
+
+#[derive(States, Reflect, Default, Debug, Clone, PartialEq, Eq, Hash)]
+enum InputState {
+    #[default]
+    CanMove,
+    CannotMove,
 }
 
 #[derive(Debug, Component, Reflect)]
