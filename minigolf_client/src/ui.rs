@@ -1,4 +1,5 @@
 use aeronet::io::bytes::Bytes;
+use aeronet_replicon::client::AeronetRepliconClient;
 use minigolf::lobby::{UserClientPacket, UserServerPacket};
 use {
     crate::network::web_socket_config,
@@ -65,6 +66,7 @@ struct LobbyServerUiSet;
 fn handle_lobby_server_packets(
     mut sessions: Query<&mut Session, With<LobbyServerSession>>,
     mut server_state: ResMut<NextState<ServerState>>,
+    mut commands: Commands,
 ) {
     let Ok(mut lobby_session) = sessions.get_single_mut() else {
         return;
@@ -83,8 +85,15 @@ fn handle_lobby_server_packets(
             UserServerPacket::LobbyJoined(_) => {
                 server_state.set(ServerState::Lobby);
             }
-            UserServerPacket::GameStarted(_) => {
+            UserServerPacket::GameStarted(server) => {
                 server_state.set(ServerState::GameServer);
+
+                let config = web_socket_config();
+                let name = format!("Game server {server}");
+
+                commands
+                    .spawn((Name::new(name), AeronetRepliconClient))
+                    .queue(WebSocketClient::connect(config, server));
             }
             UserServerPacket::PlayerJoined(_) => {}
             UserServerPacket::PlayerLeft(_) => {}

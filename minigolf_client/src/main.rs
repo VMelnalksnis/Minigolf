@@ -95,13 +95,12 @@ fn on_player_added(
     server: Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
+    players: Query<(), With<LocalPlayer>>,
 ) {
     let entity = trigger.entity();
     let player_mesh_handle: Handle<Mesh> = server.load("Player.glb#Mesh0/Primitive0");
 
     commands.entity(entity).insert((
-        LocalPlayer,
-        AccumulatedInputs { input: Vec2::ZERO },
         Mesh3d(player_mesh_handle.clone()),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Srgba::hex("#ffd891").unwrap().into(),
@@ -110,6 +109,12 @@ fn on_player_added(
             ..default()
         })),
     ));
+
+    if let Err(QuerySingleError::NoEntities(_)) = players.get_single() {
+        commands
+            .entity(entity)
+            .insert((LocalPlayer, AccumulatedInputs { input: Vec2::ZERO }));
+    }
 }
 
 fn on_level_mesh_added(

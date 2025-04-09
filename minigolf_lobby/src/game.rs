@@ -113,7 +113,10 @@ fn handle_messages(
                 }
 
                 GameClientPacket::GameCreated(lobby_id) => {
-                    game_started_writer.send(GameStarted { lobby_id });
+                    game_started_writer.send(GameStarted {
+                        lobby_id,
+                        server: "ws://localhost:25566".into(),
+                    });
                 }
             }
 
@@ -172,4 +175,5 @@ fn start_game(
 #[derive(Debug, Event)]
 pub(crate) struct GameStarted {
     pub(crate) lobby_id: LobbyId,
+    pub(crate) server: String,
 }

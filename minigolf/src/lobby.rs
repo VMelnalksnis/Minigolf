@@ -54,7 +54,7 @@ pub enum UserServerPacket {
     LobbyJoined(LobbyId),
     PlayerJoined(PlayerInLobby),
     PlayerLeft(PlayerInLobby),
-    GameStarted(LobbyId),
+    GameStarted(String),
 }
 
 // helpers for simplifying sending/receiving code

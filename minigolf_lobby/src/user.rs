@@ -101,8 +101,11 @@ fn handle_messages(
                         .spawn((Lobby::new(user_session), lobby_member))
                         .id();
 
-                    let response: String =
-                        UserServerPacket::LobbyCreated(lobby_member.lobby_id).into();
+                    // let response: String = UserServerPacket::LobbyCreated(lobby_member.lobby_id).into();
+                    let response: String = UserServerPacket::GameStarted(
+                        "ws://localhost:25566".into(),
+                    )
+                    .into();
                     session.send.push(Bytes::from_owner(response));
 
                     commands.entity(lobby).insert(lobby_member);
@@ -112,8 +115,14 @@ fn handle_messages(
                 UserClientPacket::JoinLobby(id) => {
                     commands.entity(user_session).insert(LobbyMember::from(id));
 
-                    let response: String = UserServerPacket::LobbyJoined(id).into();
+                    // let response: String = UserServerPacket::LobbyJoined(id).into();
+                    let response: String = UserServerPacket::GameStarted(
+                        "ws://localhost:25566".into(),
+                    )
+                    .into();
                     session.send.push(Bytes::from_owner(response));
+
+                    start_game_writer.send(StartGame { lobby_id: id });
                 }
 
                 UserClientPacket::ListLobbies => {
@@ -170,13 +179,13 @@ fn game_started(
     mut game_started_reader: EventReader<GameStarted>,
     mut members: Query<(&LobbyMember, &mut Session), With<UserSession>>,
 ) {
-    for game_started in game_started_reader.read() {
+    for game_started in &mut game_started_reader.read() {
         for (id, mut session) in &mut members {
             if id.lobby_id != game_started.lobby_id {
                 continue;
             }
 
-            let message: String = UserServerPacket::GameStarted(id.lobby_id).into();
+            let message: String = UserServerPacket::GameStarted(game_started.server.clone()).into();
             session.send.push(Bytes::from_owner(message));
         }
     }
