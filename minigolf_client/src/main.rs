@@ -1,6 +1,8 @@
 mod network;
 mod ui;
 
+use bevy::ecs::query::QuerySingleError;
+use bevy::input::touch::TouchPhase;
 use {
     crate::{network::ClientNetworkPlugin, ui::ClientUiPlugin},
     aeronet::io::{Session, connection::Disconnected},
@@ -27,10 +29,12 @@ fn main() -> AppExit {
             MinigolfPlugin,
         ))
         .add_systems(Startup, setup_level)
+        .init_resource::<TouchState>()
         .add_systems(
             Update,
             (
                 handle_inputs.run_if(in_state(GameState::Playing)),
+                handle_touch.run_if(in_state(GameState::Playing)),
                 launch_inputs
                     .run_if(in_state(GameState::Playing).and(input_pressed(MouseButton::Left))),
                 handle_mouse.run_if(
@@ -169,6 +173,61 @@ fn handle_inputs(mut inputs: EventWriter<PlayerInput>, input: Res<ButtonInput<Ke
     inputs.send(PlayerInput { movement });
 }
 
+#[derive(Resource, Reflect, Debug, Default)]
+struct TouchState {
+    start: Option<Vec2>,
+    last: Option<Vec2>,
+}
+
+fn handle_touch(
+    mut touch_inputs: EventReader<TouchInput>,
+    mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>,
+    mut state: ResMut<TouchState>,
+    mut writer: EventWriter<PlayerInput>,
+) {
+    for touch in touch_inputs.read() {
+        let Ok(mut input) = inputs.get_single_mut() else {
+            continue;
+        };
+
+        match touch.phase {
+            TouchPhase::Started => {
+                state.start = Some(touch.position);
+                input.input = Vec2::ZERO;
+            }
+            TouchPhase::Moved => {
+                let delta = match state.last {
+                    None => Vec2::ZERO,
+                    Some(last) => touch.position - last,
+                };
+
+                input.input.y -= delta.x / 100.0;
+                input.input.x += delta.y / 100.0;
+
+                input.input = input.input.clamp_length_max(1.0);
+
+                state.last = Some(touch.position);
+            }
+            TouchPhase::Ended => {
+                if input.input == Vec2::ZERO {
+                    continue;
+                }
+
+                writer.send(PlayerInput {
+                    movement: input.input,
+                });
+
+                input.input = Vec2::ZERO;
+                state.start = None;
+                state.last = None;
+            }
+            TouchPhase::Canceled => {
+                state.start = None;
+            }
+        }
+    }
+}
+
 fn launch_inputs(
     mut mouse_motion_events: EventReader<MouseMotion>,
     mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>,
@@ -178,7 +237,9 @@ fn launch_inputs(
             continue;
         };
 
-        input.input += ev.delta / 100.0;
+        input.input.y -= ev.delta.x / 100.0;
+        input.input.x += ev.delta.y / 100.0;
+
         input.input = input.input.clamp_length_max(1.0);
     }
 }
