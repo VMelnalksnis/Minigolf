@@ -9,6 +9,7 @@ authors.workspace = true
 minigolf = { path = "../minigolf" }
 
 bevy = { workspace = true }
+bevy-inspector-egui = { workspace = true, features = ["bevy_render"] }
 avian3d = { workspace = true, features = ["3d", "f32", "default-collider", "parry-f32", "bevy_scene", "bevy_picking", "debug-plugin", "parallel", "simd", "collider-from-mesh"] }
 clap = { workspace = true, features = ["derive"] }
 

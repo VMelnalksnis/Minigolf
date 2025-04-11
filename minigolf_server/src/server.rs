@@ -1,3 +1,6 @@
+use bevy::input::common_conditions::input_toggle_active;
+use bevy_inspector_egui::bevy_egui::EguiPlugin;
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use {
     crate::{
         config::ServerPlugin,
@@ -57,6 +60,7 @@ pub fn main() -> AppExit {
             ServerNetworkPlugin,
             MinigolfPlugin,
             PhysicsPlugins::default(),
+            PhysicsDebugPlugin::default(),
         ))
         .add_systems(Startup, setup)
         .add_observer(on_disconnected)

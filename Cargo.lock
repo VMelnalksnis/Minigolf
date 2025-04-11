@@ -4031,6 +4031,7 @@ dependencies = [
  "aeronet_webtransport",
  "avian3d",
  "bevy",
+ "bevy-inspector-egui",
  "bevy_replicon",
  "clap",
  "minigolf",
