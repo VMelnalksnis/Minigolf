@@ -71,6 +71,12 @@ pub struct LevelMesh {
     pub asset: String,
 }
 
+impl LevelMesh {
+    pub fn from_path(path: &str) -> Self {
+        LevelMesh { asset: path.into() }
+    }
+}
+
 /// Player's inputs that they send to control their box.
 #[derive(Debug, Clone, Default, Event, Serialize, Deserialize, Reflect)]
 pub struct PlayerInput {

@@ -125,22 +125,50 @@ fn reset(
     }
 }
 
-fn setup(mut commands: Commands, server: Res<AssetServer>) {
-    let level_mesh_handle: Handle<Mesh> = server.load("Level1.glb#Mesh0/Primitive0");
+#[derive(Component, Reflect, Debug)]
+struct Course;
 
-    commands.spawn((
-        LevelMesh {
-            asset: "Level1.glb#Mesh0/Primitive0".parse().unwrap(),
-        },
-        Replicated,
-        Transform::from_xyz(4.0, -1.0, 0.0).with_scale(Vec3::new(5.0, 1.0, 1.0)),
-        RigidBody::Static,
-        ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
-        Mesh3d(level_mesh_handle),
-        CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
-        Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
-        Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
-    ));
+#[derive(Component, Reflect, Debug)]
+struct Hole {
+    start_position: Vec3,
+}
+
+impl Hole {
+    fn new() -> Self {
+        Hole {
+            start_position: Vec3::ZERO,
+        }
+    }
+}
+
+fn setup(mut commands: Commands, server: Res<AssetServer>) {
+    let scene = commands
+        .spawn((Name::new("Scene"), SceneRoot::default()))
+        .id();
+
+    let course = commands
+        .spawn((Name::new("Course"), Course, Transform::default()))
+        .set_parent(scene)
+        .id();
+
+    let hole1_path = "Level1.glb#Mesh0/Primitive0";
+    let level_mesh_handle: Handle<Mesh> = server.load(hole1_path);
+
+    commands
+        .spawn((
+            Name::new("Hole 1"),
+            LevelMesh::from_path(hole1_path),
+            Hole::new(),
+            Replicated,
+            Transform::from_xyz(4.0, -1.0, 0.0).with_scale(Vec3::new(5.0, 1.0, 1.0)),
+            RigidBody::Static,
+            ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
+            Mesh3d(level_mesh_handle),
+            CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
+            Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
+            Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
+        ))
+        .set_parent(course);
 }
 
 fn recv_input(
