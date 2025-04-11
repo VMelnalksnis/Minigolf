@@ -1,11 +1,11 @@
 use {
-    crate::{Args, LobbyMember},
+    crate::Args,
     aeronet::{io::Session, io::bytes::Bytes, io::connection::LocalAddr, io::server::Server},
     aeronet_websocket::server::{ServerConfig, WebSocketServer},
     bevy::prelude::*,
     minigolf::{
-        lobby::LobbyId,
-        lobby::{GameClientPacket, GameServerPacket},
+        lobby::{GameClientPacket, GameServerPacket, LobbyId, LobbyMember},
+        {Player, PlayerCredentials},
     },
     std::{net::SocketAddr, ops::RangeFull},
 };
@@ -20,9 +20,9 @@ impl Plugin for GameServerPlugin {
             .add_observer(on_connected)
             .add_observer(on_game_server_added)
             .add_observer(on_game_server_removed)
-            .add_systems(FixedUpdate, handle_messages)
+            .add_systems(Update, handle_messages)
             .add_event::<StartGame>()
-            .add_systems(FixedUpdate, start_game)
+            .add_systems(PostUpdate, start_game)
             .add_event::<GameStarted>();
     }
 }
@@ -120,9 +120,12 @@ fn handle_messages(
                 }
             }
 
-            if let GameClientPacket::Available(_) = client_packet {
-                commands.entity(entity).remove::<GameServer>();
-            }
+            match client_packet {
+                GameClientPacket::Available(_) => {}
+                _ => {
+                    commands.entity(entity).remove::<GameServer>();
+                }
+            };
         }
     }
 }
@@ -145,7 +148,7 @@ fn on_game_server_removed(_trigger: Trigger<OnRemove, GameServer>, servers: Quer
     }
 }
 
-#[derive(Debug, Event)]
+#[derive(Event, Debug)]
 pub(crate) struct StartGame {
     pub(crate) lobby_id: LobbyId,
 }
@@ -161,10 +164,19 @@ impl From<&LobbyMember> for StartGame {
 fn start_game(
     mut start_game_reader: EventReader<StartGame>,
     mut servers: Query<&mut Session, With<GameServer>>,
+    lobby_players: Query<(&LobbyMember, &Player, &PlayerCredentials)>,
 ) {
     for start_game in start_game_reader.read() {
         for mut server in &mut servers {
-            let message: String = GameServerPacket::CreateGame(start_game.lobby_id).into();
+            let players = lobby_players
+                .iter()
+                .filter(|(member, _, _)| member.lobby_id == start_game.lobby_id)
+                .map(|(_, player, credentials)| (player.id, credentials.clone()))
+                .collect();
+
+            let message: String = GameServerPacket::CreateGame(start_game.lobby_id, players).into();
+
+            info!("Sending message {:?}", message);
             server.send.push(Bytes::from_owner(message));
 
             break;

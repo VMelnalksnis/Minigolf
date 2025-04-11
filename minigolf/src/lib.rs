@@ -5,6 +5,7 @@ use {
     bevy::prelude::*,
     bevy_replicon::prelude::*,
     serde::{Deserialize, Serialize},
+    uuid::Uuid,
 };
 
 /// How many times per second we will replicate entity components.
@@ -35,12 +36,14 @@ impl Plugin for MinigolfPlugin {
             .replicate::<Transform>()
             .replicate::<LevelMesh>()
             .replicate::<Name>()
-            .add_client_event::<PlayerInput>(ChannelKind::Unreliable);
+            .add_client_event::<AuthenticatePlayer>(ChannelKind::Ordered)
+            .add_client_event::<PlayerInput>(ChannelKind::Ordered)
+            .add_server_event::<RequestAuthentication>(ChannelKind::Ordered);
     }
 }
 
 /// Marker component for a player in the game.
-#[derive(Debug, Clone, Component, Serialize, Deserialize, Reflect)]
+#[derive(Component, Reflect, Serialize, Deserialize, Debug, Copy, Clone)]
 #[require(StateScoped<GameState>(|| StateScoped(GameState::Playing)))]
 pub struct Player {
     pub id: PlayerId,
@@ -61,6 +64,19 @@ impl From<PlayerId> for Player {
         Player {
             id,
             can_move: false,
+        }
+    }
+}
+
+#[derive(Component, Reflect, Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct PlayerCredentials {
+    pub secret: String,
+}
+
+impl Default for PlayerCredentials {
+    fn default() -> Self {
+        PlayerCredentials {
+            secret: Uuid::new_v4().into(),
         }
     }
 }
@@ -87,3 +103,12 @@ pub struct PlayerInput {
     /// zero this vector before using it for movement updates.
     pub movement: Vec2,
 }
+
+#[derive(Debug, Clone, Event, Serialize, Deserialize, Reflect)]
+pub struct AuthenticatePlayer {
+    pub id: PlayerId,
+    pub credentials: PlayerCredentials,
+}
+
+#[derive(Debug, Clone, Event, Serialize, Deserialize, Reflect)]
+pub struct RequestAuthentication;

@@ -1,17 +1,21 @@
-use aeronet::io::bytes::Bytes;
-use aeronet_replicon::client::AeronetRepliconClient;
-use minigolf::lobby::{UserClientPacket, UserServerPacket};
+use minigolf::lobby::LobbyId;
 use {
     crate::network::web_socket_config,
     aeronet::io::{
         Session, SessionEndpoint,
+        bytes::Bytes,
         connection::{Disconnect, DisconnectReason, Disconnected},
     },
+    aeronet_replicon::client::AeronetRepliconClient,
     aeronet_websocket::client::WebSocketClient,
     bevy::{input::common_conditions::input_toggle_active, prelude::*},
     bevy_egui::{EguiContexts, EguiPlugin, egui},
     bevy_inspector_egui::quick::WorldInspectorPlugin,
     bevy_replicon::prelude::*,
+    minigolf::{
+        AuthenticatePlayer, PlayerCredentials, RequestAuthentication,
+        lobby::{PlayerId, UserClientPacket, UserServerPacket},
+    },
 };
 
 /// Sets up minigolf client UI.
@@ -40,6 +44,7 @@ impl Plugin for ClientUiPlugin {
                 LobbyServerUiSet.run_if(in_state(ServerState::LobbyServer)),
             )
             .add_systems(Update, handle_lobby_server_packets)
+            .add_systems(Update, on_authentication_requested)
             .add_systems(Update, global_ui)
             .add_observer(on_connecting)
             .add_observer(on_connected_to_lobby_server)
@@ -47,6 +52,10 @@ impl Plugin for ClientUiPlugin {
             .init_resource::<LobbiesUi>()
             .configure_sets(Update, LobbiesUiSet.run_if(in_state(ServerState::Lobbies)))
             .add_systems(Update, lobbies_ui.in_set(LobbiesUiSet));
+
+        app.init_resource::<LobbyUi>()
+            .configure_sets(Update, LobbyUiSet.run_if(in_state(ServerState::Lobby)))
+            .add_systems(Update, lobby_ui.in_set(LobbyUiSet));
     }
 }
 
@@ -63,6 +72,9 @@ enum ServerState {
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 struct LobbyServerUiSet;
 
+#[derive(Component, Reflect, Debug)]
+struct TempMarker;
+
 fn handle_lobby_server_packets(
     mut sessions: Query<&mut Session, With<LobbyServerSession>>,
     mut server_state: ResMut<NextState<ServerState>>,
@@ -77,7 +89,9 @@ fn handle_lobby_server_packets(
         info!("Lobby packet received: {:?}", packet);
 
         match packet {
-            UserServerPacket::Hello => {}
+            UserServerPacket::Hello(id, credentials) => {
+                commands.insert_resource(Authentication { id, credentials });
+            }
             UserServerPacket::LobbyCreated(_) => {
                 server_state.set(ServerState::Lobby);
             }
@@ -101,9 +115,40 @@ fn handle_lobby_server_packets(
     }
 }
 
+fn on_authentication_requested(
+    authentication: Option<Res<Authentication>>,
+    mut writer: EventWriter<AuthenticatePlayer>,
+    mut readed: EventReader<RequestAuthentication>,
+) {
+    for _ in readed.read() {
+        let auth = match &authentication {
+            None => Authentication {
+                id: PlayerId::new(),
+                credentials: PlayerCredentials::default(),
+            },
+            Some(res) => Authentication {
+                id: res.id,
+                credentials: res.credentials.clone(),
+            },
+        };
+
+        info!("Sending {:?}", auth);
+        writer.send(AuthenticatePlayer {
+            id: auth.id,
+            credentials: auth.credentials,
+        });
+    }
+}
+
 #[derive(Resource, Reflect, Debug, Default)]
 struct LobbyServerUi {
     target: String,
+}
+
+#[derive(Resource, Reflect, Clone, Debug)]
+pub(crate) struct Authentication {
+    pub(crate) id: PlayerId,
+    credentials: PlayerCredentials,
 }
 
 #[derive(Debug, Component)]
@@ -191,10 +236,15 @@ fn lobbies_ui(
             ui.text_edit_singleline(&mut lobbies_ui.lobby_id);
 
             if ui.button("Join lobby").clicked() {
+                let Ok(id) = lobbies_ui.lobby_id.parse::<LobbyId>() else {
+                    lobbies_ui.lobby_id = String::new();
+                    return;
+                };
+
                 info!("Joining lobby {}", lobbies_ui.lobby_id);
 
                 let mut session = lobby_session.single_mut();
-                let request: String = UserClientPacket::JoinLobby(lobbies_ui.lobby_id.parse().unwrap()).into();
+                let request: String = UserClientPacket::JoinLobby(id).into();
                 session.send.push(Bytes::from(request));
             }
         });
@@ -205,6 +255,45 @@ fn lobbies_ui(
                 let mut session = lobby_session.single_mut();
                 let request: String = UserClientPacket::CreateLobby.into();
                 session.send.push(Bytes::from(request));
+            }
+        })
+    });
+}
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+struct LobbyUiSet;
+
+#[derive(Resource, Reflect, Debug, Default)]
+struct LobbyUi {
+    lobby_id: String,
+    players: Vec<PlayerId>,
+}
+
+fn lobby_ui(
+    mut egui: EguiContexts,
+    lobby_ui: ResMut<LobbyUi>,
+    mut lobby_session: Query<&mut Session, With<LobbyServerSession>>,
+    mut state: ResMut<NextState<ServerState>>,
+) {
+    let title = format!("Lobby {}", lobby_ui.lobby_id);
+
+    egui::Window::new(title).show(egui.ctx_mut(), |ui| {
+        ui.horizontal(|ui| {
+            if ui.button("Start game").clicked() {
+                info!("Starting game");
+
+                let mut session = lobby_session.single_mut();
+                let request: String = UserClientPacket::StartGame.into();
+                session.send.push(Bytes::from(request));
+            }
+
+            if ui.button("Leave lobby").clicked() {
+                info!("Leaving lobby");
+
+                let mut session = lobby_session.single_mut();
+                let request: String = UserClientPacket::LeaveLobby.into();
+                session.send.push(Bytes::from(request));
+                state.set(ServerState::Lobbies);
             }
         })
     });

@@ -1,9 +1,12 @@
-use bevy::prelude::Reflect;
-use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
-use uuid::Uuid;
+use {
+    crate::PlayerCredentials,
+    bevy::prelude::*,
+    serde::{Deserialize, Serialize},
+    std::net::SocketAddr,
+    uuid::Uuid,
+};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Reflect, Copy)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Reflect, Copy, Hash)]
 pub struct UniqueId {
     id: Uuid,
 }
@@ -23,6 +26,25 @@ pub struct PlayerInLobby {
     pub player_id: PlayerId,
 }
 
+#[derive(Debug, Component, Reflect, Copy, Clone)]
+pub struct LobbyMember {
+    pub lobby_id: LobbyId,
+}
+
+impl LobbyMember {
+    pub fn new() -> Self {
+        LobbyMember {
+            lobby_id: Uuid::new_v4().as_u64_pair().0,
+        }
+    }
+}
+
+impl From<LobbyId> for LobbyMember {
+    fn from(value: LobbyId) -> Self {
+        LobbyMember { lobby_id: value }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum GameClientPacket {
     Hello,
@@ -34,7 +56,7 @@ pub enum GameClientPacket {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum GameServerPacket {
     Hello,
-    CreateGame(LobbyId),
+    CreateGame(LobbyId, Vec<(PlayerId, PlayerCredentials)>),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -43,12 +65,13 @@ pub enum UserClientPacket {
     CreateLobby,
     ListLobbies,
     JoinLobby(LobbyId),
+    LeaveLobby,
     StartGame,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum UserServerPacket {
-    Hello,
+    Hello(PlayerId, PlayerCredentials),
     LobbyCreated(LobbyId),
     AvailableLobbies(Vec<LobbyId>),
     LobbyJoined(LobbyId),

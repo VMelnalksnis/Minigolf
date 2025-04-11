@@ -19,4 +19,6 @@ aeronet_webtransport = { workspace = true, features = ["server"] }
 bevy_replicon = { workspace = true, features = ["server"] }
 aeronet_replicon = { workspace = true, features = ["server"] }
 
-serde_json = { workspace = true }
+[features]
+default = ["ui"]
+ui = []

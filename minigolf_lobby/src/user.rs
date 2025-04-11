@@ -1,12 +1,15 @@
 use {
     crate::{
-        Args, Lobby, LobbyMember,
+        Args, Lobby,
         game::{GameStarted, StartGame},
     },
     aeronet::{io::Session, io::bytes::Bytes, io::connection::LocalAddr, io::server::Server},
     aeronet_websocket::server::{ServerConfig, WebSocketServer},
     bevy::prelude::*,
-    minigolf::lobby::{UserClientPacket, UserServerPacket},
+    minigolf::{
+        Player, PlayerCredentials,
+        lobby::{LobbyMember, UserClientPacket, UserServerPacket},
+    },
     std::ops::RangeFull,
 };
 
@@ -19,8 +22,8 @@ impl Plugin for UserPlugin {
             .add_observer(on_opened)
             .add_observer(on_connected)
             .add_observer(on_lobby_id_added)
-            .add_systems(FixedUpdate, handle_messages)
-            .add_systems(FixedUpdate, game_started);
+            .add_systems(Update, handle_messages)
+            .add_systems(Update, game_started);
     }
 }
 
@@ -60,6 +63,7 @@ fn on_opened(
 
 fn on_connected(
     trigger: Trigger<OnAdd, Session>,
+    mut sessions: Query<&mut Session>,
     servers: Query<&Parent>,
     users: Query<&UserListener>,
     mut commands: Commands,
@@ -72,13 +76,23 @@ fn on_connected(
 
     if let Ok(_) = users.get(server) {
         info!("User {client} connected to {server}");
-        commands.entity(client).insert(UserSession);
+
+        let player = Player::new();
+        let credentials = PlayerCredentials::default();
+        commands
+            .entity(client)
+            .insert((player, credentials.clone(), UserSession));
+
+        let message: String = UserServerPacket::Hello(player.id, credentials).into();
+        let mut session = sessions.get_mut(client).unwrap();
+        session.send.push(Bytes::from_owner(message));
     }
 }
 
 fn handle_messages(
     mut start_game_writer: EventWriter<StartGame>,
     mut sessions: Query<(Entity, &mut Session), With<UserSession>>,
+    known_players: Query<(&Player, &PlayerCredentials)>,
     members: Query<&LobbyMember>,
     mut commands: Commands,
 ) {
@@ -87,11 +101,28 @@ fn handle_messages(
 
         for message in session.recv.drain(RangeFull::default()) {
             let client_packet = UserClientPacket::from(message.payload.as_ref());
-            info!("{client_packet:?}");
+            info!("Client packet {client_packet:?}");
 
             match client_packet {
                 UserClientPacket::Hello => {
-                    let response: String = UserServerPacket::Hello.into();
+                    let (player, credentials) = match known_players.get(user_session) {
+                        Ok((player, credentials)) => (player.clone(), credentials.clone()),
+                        Err(_) => {
+                            let player = Player::new();
+                            let credentials = PlayerCredentials::default();
+
+                            info!("New player {player:?}");
+
+                            commands
+                                .entity(user_session)
+                                .insert((player, credentials.clone()));
+
+                            (player, credentials)
+                        }
+                    };
+
+                    let response: String =
+                        UserServerPacket::Hello(player.id, credentials.clone()).into();
                     session.send.push(Bytes::from_owner(response));
                 }
 
@@ -101,26 +132,23 @@ fn handle_messages(
                         .spawn((Lobby::new(user_session), lobby_member))
                         .id();
 
-                    // let response: String = UserServerPacket::LobbyCreated(lobby_member.lobby_id).into();
-                    let response: String = UserServerPacket::GameStarted(
-                        "ws://localhost:25566".into(),
-                    )
-                    .into();
-                    session.send.push(Bytes::from_owner(response));
+                    let message: String =
+                        UserServerPacket::LobbyCreated(lobby_member.lobby_id).into();
+                    session.send.push(Bytes::from_owner(message));
 
                     commands.entity(lobby).insert(lobby_member);
                     commands.entity(user_session).insert(lobby_member);
+
+                    // start_game_writer.send(StartGame {
+                    //     lobby_id: lobby_member.lobby_id,
+                    // });
                 }
 
                 UserClientPacket::JoinLobby(id) => {
                     commands.entity(user_session).insert(LobbyMember::from(id));
 
-                    // let response: String = UserServerPacket::LobbyJoined(id).into();
-                    let response: String = UserServerPacket::GameStarted(
-                        "ws://localhost:25566".into(),
-                    )
-                    .into();
-                    session.send.push(Bytes::from_owner(response));
+                    let message: String = UserServerPacket::LobbyJoined(id).into();
+                    session.send.push(Bytes::from_owner(message));
 
                     start_game_writer.send(StartGame { lobby_id: id });
                 }
@@ -137,6 +165,9 @@ fn handle_messages(
                 UserClientPacket::StartGame => {
                     let user_lobby = members.get(user_session).unwrap();
                     start_game_writer.send(user_lobby.into());
+                }
+                UserClientPacket::LeaveLobby => {
+                    commands.entity(user_session).remove::<LobbyMember>();
                 }
             };
         }

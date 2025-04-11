@@ -1,21 +1,14 @@
 use {
-    crate::network::ServerNetworkPlugin,
-    aeronet::io::{Session, connection::Disconnected},
+    crate::{
+        config::ServerPlugin,
+        network::{PlayerAuthenticated, ServerNetworkPlugin},
+    },
+    aeronet::io::connection::Disconnected,
     avian3d::prelude::*,
-    bevy::{
-        app::ScheduleRunnerPlugin,
-        ecs::observer::TriggerTargets,
-        prelude::*,
-        render::{RenderPlugin, settings::WgpuSettings},
-        winit::WinitPlugin,
-    },
+    bevy::{ecs::observer::TriggerTargets, prelude::*},
     bevy_replicon::{prelude::*, server::increment_tick},
-    core::time::Duration,
-    minigolf::{LevelMesh, MinigolfPlugin, Player, PlayerInput, TICK_RATE},
-    std::{
-        convert::Into,
-        net::{IpAddr, Ipv6Addr, SocketAddr},
-    },
+    minigolf::{LevelMesh, MinigolfPlugin, Player, PlayerInput},
+    std::net::{IpAddr, Ipv6Addr, SocketAddr},
 };
 
 const WEB_TRANSPORT_PORT: u16 = 25565;
@@ -59,34 +52,24 @@ struct PlayerSession {
 pub fn main() -> AppExit {
     App::new()
         .init_resource::<Args>()
-        .add_plugins(
-            DefaultPlugins
-                .set(RenderPlugin {
-                    render_creation: WgpuSettings {
-                        backends: None,
-                        ..default()
-                    }
-                    .into(),
-                    ..default()
-                })
-                .disable::<WinitPlugin>(),
-        )
+        .add_plugins(ServerPlugin)
         .add_plugins((
             ServerNetworkPlugin,
             MinigolfPlugin,
             PhysicsPlugins::default(),
         ))
-        .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::from_secs_f64(
-            1.0 / f64::from(TICK_RATE),
-        )))
         .add_systems(Startup, setup)
-        .add_observer(on_connected)
         .add_observer(on_disconnected)
         .insert_resource(Time::<Fixed>::from_hz(128.0))
         .add_systems(FixedUpdate, recv_input.run_if(server_or_singleplayer))
         .add_systems(FixedUpdate, reset)
         .add_systems(FixedUpdate, player_can_move)
         .add_systems(FixedPreUpdate, increment_tick)
+        .add_systems(Update, on_player_authenticated)
+        .add_observer(on_hole_added)
+        .register_type::<Course>()
+        .register_type::<Hole>()
+        .init_state::<CourseState>()
         .run()
 }
 
@@ -126,11 +109,33 @@ fn reset(
 }
 
 #[derive(Component, Reflect, Debug)]
-struct Course;
+struct Course {
+    holes: Vec<Entity>,
+}
+
+impl Course {
+    fn new() -> Self {
+        Course { holes: vec![] }
+    }
+}
+
+#[derive(States, Default, Clone, Eq, PartialEq, Hash, Debug)]
+enum CourseState {
+    #[default]
+    WaitingForGame,
+    WaitingForPlayers,
+    Playing,
+    Completed,
+}
 
 #[derive(Component, Reflect, Debug)]
 struct Hole {
     start_position: Vec3,
+}
+
+#[derive(Component, Reflect, Debug)]
+struct PlayerScore {
+    score: u32,
 }
 
 impl Hole {
@@ -146,8 +151,19 @@ fn setup(mut commands: Commands, server: Res<AssetServer>) {
         .spawn((Name::new("Scene"), SceneRoot::default()))
         .id();
 
+    commands.spawn((
+        Name::new("Camera"),
+        Camera3d::default(),
+        Transform::from_xyz(-5.0, 2.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
+
     let course = commands
-        .spawn((Name::new("Course"), Course, Transform::default()))
+        .spawn((
+            Name::new("Course"),
+            Course::new(),
+            Transform::default(),
+            Visibility::default(),
+        ))
         .set_parent(scene)
         .id();
 
@@ -169,6 +185,12 @@ fn setup(mut commands: Commands, server: Res<AssetServer>) {
             Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
         ))
         .set_parent(course);
+}
+
+fn on_hole_added(trigger: Trigger<OnAdd, Hole>, mut course: Query<&mut Course>) {
+    let hole_entity = trigger.entity();
+    let mut course = course.single_mut();
+    course.holes.push(hole_entity);
 }
 
 fn recv_input(
@@ -231,7 +253,7 @@ fn player_can_move(
             position.position = transform.translation;
             position.rotation = transform.rotation;
 
-            info!("Last position: {position:?}");
+            // info!("Last position: {position:?}");
         }
     }
 }
@@ -240,23 +262,16 @@ fn player_can_move(
 // server logic
 //
 
-fn on_connected(trigger: Trigger<OnAdd, Session>, parent: Query<&Parent>, mut commands: Commands) {
-    let client = trigger.entity();
-    let Ok(_) = parent.get(client) else {
-        return;
-    };
+fn on_player_authenticated(mut reader: EventReader<PlayerAuthenticated>, mut commands: Commands) {
+    for authenticated in reader.read() {
+        let initial_position = Vec3::new(0.0, 0.5, 0.0);
 
-    let initial_position = Vec3::new(0.0, 0.5, 0.0);
-
-    let player = commands
-        .spawn((
-            Player::new(),
+        commands.entity(authenticated.player).insert((
             PlayerInput::default(),
             LastPlayerPosition {
                 position: initial_position,
                 rotation: Quat::IDENTITY,
             },
-            Name::new("Player"),
             Replicated,
             RigidBody::Dynamic,
             Collider::sphere(0.021336),
@@ -266,10 +281,14 @@ fn on_connected(trigger: Trigger<OnAdd, Session>, parent: Query<&Parent>, mut co
             Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
             Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
             AngularDamping(3.0),
-        ))
-        .id();
+        ));
 
-    commands.entity(client).insert(PlayerSession { player });
+        commands
+            .entity(authenticated.session)
+            .insert(PlayerSession {
+                player: authenticated.player,
+            });
+    }
 }
 
 fn on_disconnected(
@@ -278,6 +297,7 @@ fn on_disconnected(
     mut commands: Commands,
 ) {
     let client = trigger.entity();
+    info!("Disconnected {:?}", client);
     let Ok(session) = sessions.get(client) else {
         return;
     };

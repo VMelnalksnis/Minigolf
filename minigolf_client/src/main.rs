@@ -1,18 +1,19 @@
 mod network;
 mod ui;
 
-use bevy::ecs::query::QuerySingleError;
-use bevy::input::touch::TouchPhase;
 use {
     crate::{network::ClientNetworkPlugin, ui::ClientUiPlugin},
     aeronet::io::{Session, connection::Disconnected},
     bevy::{
         color::palettes::basic::RED,
+        ecs::query::QuerySingleError,
         input::{
             common_conditions::{input_just_released, input_pressed},
             mouse::{MouseMotion, MouseWheel},
+            touch::TouchPhase,
         },
         prelude::*,
+        window::PrimaryWindow,
     },
     minigolf::{GameState, LevelMesh, MinigolfPlugin, Player, PlayerInput},
     web_sys::{HtmlCanvasElement, wasm_bindgen::JsCast},
@@ -28,7 +29,7 @@ fn main() -> AppExit {
             ClientNetworkPlugin,
             MinigolfPlugin,
         ))
-        .add_systems(Startup, setup_level)
+        .add_systems(Startup, (set_window_title, setup_level))
         .init_resource::<TouchState>()
         .init_state::<InputState>()
         .add_systems(
@@ -59,6 +60,12 @@ fn main() -> AppExit {
         .add_observer(on_level_mesh_added)
         .add_observer(on_disconnected)
         .run()
+}
+
+fn set_window_title(mut primary_windows: Query<&mut Window, With<PrimaryWindow>>) {
+    if let Ok(mut window) = primary_windows.get_single_mut() {
+        window.title = "Minigolf".to_string();
+    }
 }
 
 fn follow_player(
@@ -148,6 +155,8 @@ fn on_player_added(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
     players: Query<(), With<LocalPlayer>>,
+    all_players: Query<(Entity, &Player)>,
+    authentication: Res<ui::Authentication>,
 ) {
     let entity = trigger.entity();
     let player_mesh_handle: Handle<Mesh> = server.load("Player.glb#Mesh0/Primitive0");
@@ -163,9 +172,17 @@ fn on_player_added(
     ));
 
     if let Err(QuerySingleError::NoEntities(_)) = players.get_single() {
-        commands
-            .entity(entity)
-            .insert((LocalPlayer, AccumulatedInputs { input: Vec2::ZERO }));
+        let x = all_players
+            .iter()
+            .filter(|(e, p)| *e == entity && p.id == authentication.id)
+            .map(|(e, _)| e)
+            .collect::<Vec<_>>();
+
+        if let &[_] = x.as_slice() {
+            commands
+                .entity(entity)
+                .insert((LocalPlayer, AccumulatedInputs { input: Vec2::ZERO }));
+        }
     }
 }
 

@@ -4034,7 +4034,6 @@ dependencies = [
  "bevy_replicon",
  "clap",
  "minigolf",
- "serde_json",
 ]
 
 [[package]]

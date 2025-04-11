@@ -1,18 +1,18 @@
-use aeronet::io::bytes::Bytes;
-use aeronet::transport::AeronetTransportPlugin;
-use aeronet_websocket::client::WebSocketClientPlugin;
-use minigolf::lobby::{GameClientPacket, GameServerPacket};
-use std::ops::RangeFull;
 use {
-    crate::server::Args,
-    aeronet::io::{
-        Session,
-        connection::{DisconnectReason, Disconnected, LocalAddr},
-        server::Server,
+    crate::{ServerState, server::Args},
+    aeronet::{
+        io::bytes::Bytes,
+        io::connection::Disconnect,
+        io::{
+            Session,
+            connection::{DisconnectReason, Disconnected, LocalAddr},
+            server::Server,
+        },
+        transport::AeronetTransportPlugin,
     },
     aeronet_replicon::server::{AeronetRepliconServer, AeronetRepliconServerPlugin},
     aeronet_websocket::{
-        client::WebSocketClient,
+        client::{WebSocketClient, WebSocketClientPlugin},
         server::{WebSocketServer, WebSocketServerPlugin},
     },
     aeronet_webtransport::{
@@ -23,6 +23,10 @@ use {
     bevy::prelude::*,
     bevy_replicon::prelude::*,
     core::time::Duration,
+    minigolf::{
+        AuthenticatePlayer, Player, PlayerCredentials, RequestAuthentication,
+        lobby::{GameClientPacket, GameServerPacket, LobbyMember},
+    },
 };
 
 /// Sets up minigolf server networking.
@@ -37,7 +41,7 @@ impl Plugin for ServerNetworkPlugin {
                 RepliconPlugins.set(ServerPlugin {
                     // 1 frame lasts `1.0 / TICK_RATE` anyway
                     tick_policy: TickPolicy::Manual,
-                    ..Default::default()
+                    ..default()
                 }),
                 AeronetRepliconServerPlugin,
             ))
@@ -45,32 +49,50 @@ impl Plugin for ServerNetworkPlugin {
             .add_observer(on_session_request)
             .add_observer(on_connected)
             .add_observer(on_disconnected)
-            .add_systems(
+            .add_systems(Startup, (open_web_transport_server, open_web_socket_server))
+            .add_event::<PlayerAuthenticated>();
+
+        app.init_state::<ServerState>()
+            .enable_state_scoped_entities::<ServerState>();
+
+        app.init_resource::<LobbyServerConnector>()
+            .configure_sets(
                 Startup,
-                (
-                    open_web_transport_server,
-                    open_web_socket_server,
-                    connect_to_lobby,
-                ),
+                LobbySet.run_if(in_state(ServerState::WaitingForLobby)),
             )
-            .add_systems(FixedUpdate, recv_lobby_messages);
+            .configure_sets(
+                Update,
+                LobbySet.run_if(in_state(ServerState::WaitingForLobby)),
+            )
+            .add_systems(Startup, lobby_setup.in_set(LobbySet))
+            .add_systems(
+                Update,
+                (lobby_connection_messages, reconnect_to_lobby).in_set(LobbySet),
+            );
+
+        app.configure_sets(
+            Update,
+            GameSet.run_if(in_state(ServerState::WaitingForGame)),
+        )
+        .add_systems(Update, game_setup_messages.in_set(GameSet));
+
+        app.configure_sets(
+            FixedUpdate,
+            PlayersJoiningSet.run_if(in_state(ServerState::WaitingForPlayers)),
+        )
+        .add_systems(
+            OnEnter(ServerState::WaitingForPlayers),
+            setup_waiting_for_players,
+        )
+        .add_systems(
+            FixedUpdate,
+            (player_authentication_handler, all_players_joined).in_set(PlayersJoiningSet),
+        )
+        .register_type::<UnauthenticatedSession>();
     }
 }
 
-fn connect_to_lobby(mut commands: Commands, args: Res<Args>) {
-    let config = aeronet_websocket::client::ClientConfig::builder().with_no_encryption();
-    let target = format!("ws://{}", args.lobby_address);
-
-    info!("Connecting to lobby server at {}", target);
-
-    commands
-        .spawn(Name::new("Lobby server connection"))
-        .queue(WebSocketClient::connect(config, target));
-}
-
-//
-// WebTransport
-//
+// Listener setup for users
 
 fn open_web_transport_server(mut commands: Commands, args: Res<Args>) {
     let identity = wtransport::Identity::self_signed(["localhost", "127.0.0.1", "::1"])
@@ -105,10 +127,6 @@ fn web_transport_config(identity: wtransport::Identity, args: &Args) -> WebTrans
         .build()
 }
 
-//
-// WebSocket
-//
-
 type WebSocketServerConfig = aeronet_websocket::server::ServerConfig;
 
 fn open_web_socket_server(mut commands: Commands, args: Res<Args>) {
@@ -125,6 +143,273 @@ fn web_socket_config(args: &Args) -> WebSocketServerConfig {
         .with_bind_default(args.ws_port)
         .with_no_encryption()
 }
+
+// Client setup for lobby server
+
+#[derive(SystemSet, Clone, Eq, PartialEq, Hash, Debug)]
+struct LobbySet;
+
+#[derive(Resource, Reflect, Debug)]
+struct LobbyServerConnector {
+    timer: Timer,
+    attempts: usize,
+}
+
+impl LobbyServerConnector {
+    fn retry(&mut self) {
+        if self.attempts >= 5 {
+            panic!(
+                "retried {} times to connect to lobby server without success",
+                self.attempts
+            );
+        }
+
+        self.attempts += 1;
+        self.timer.reset();
+        self.timer.unpause();
+    }
+}
+
+impl FromWorld for LobbyServerConnector {
+    fn from_world(_world: &mut World) -> Self {
+        LobbyServerConnector {
+            timer: Timer::new(Duration::from_secs(10), TimerMode::Once),
+            attempts: 0,
+        }
+    }
+}
+
+fn lobby_setup(mut commands: Commands, args: Res<Args>) {
+    commands.spawn((
+        Name::new("Lobby server disconnect observer"),
+        Observer::new(on_lobby_disconnected),
+        StateScoped(ServerState::WaitingForLobby),
+    ));
+
+    connect_to_lobby(commands, args);
+}
+
+fn lobby_connection_messages(
+    mut sessions: Query<&mut Session, With<WebSocketClient>>,
+    servers: Query<&LocalAddr, With<WebSocketServer>>,
+    mut server_state: ResMut<NextState<ServerState>>,
+) {
+    let Ok(mut session) = sessions.get_single_mut() else {
+        return;
+    };
+
+    let session = &mut *session;
+
+    for message in session.recv.drain(..) {
+        let server_packet = GameServerPacket::from(message.payload.as_ref());
+        info!("{server_packet:?}");
+
+        match server_packet {
+            GameServerPacket::Hello => {
+                let server_address = servers.get_single().unwrap().0;
+                let response: String = GameClientPacket::Available(server_address).into();
+                session.send.push(Bytes::from_owner(response));
+                server_state.set(ServerState::WaitingForGame);
+            }
+
+            GameServerPacket::CreateGame(_, _) => unimplemented!(),
+        }
+    }
+}
+
+fn on_lobby_disconnected(
+    trigger: Trigger<Disconnected>,
+    mut connector: ResMut<LobbyServerConnector>,
+) {
+    match &trigger.reason {
+        DisconnectReason::User(reason) => {
+            panic!("Disconnected from lobby server by user; {}", reason)
+        }
+        DisconnectReason::Peer(_) => connector.retry(),
+        DisconnectReason::Error(_) => connector.retry(),
+    }
+}
+
+fn reconnect_to_lobby(
+    mut connector: ResMut<LobbyServerConnector>,
+    commands: Commands,
+    args: Res<Args>,
+    time: Res<Time>,
+) {
+    connector.timer.tick(time.delta());
+
+    if connector.timer.just_finished() {
+        connect_to_lobby(commands, args);
+    }
+}
+
+fn connect_to_lobby(mut commands: Commands, args: Res<Args>) {
+    let config = aeronet_websocket::client::ClientConfig::builder().with_no_encryption();
+    let target = format!("ws://{}", args.lobby_address);
+
+    info!("Connecting to lobby server at {}", target);
+
+    commands
+        .spawn(Name::new("Lobby server connection"))
+        .queue(WebSocketClient::connect(config, target));
+}
+
+// game setup
+
+#[derive(SystemSet, Clone, Eq, PartialEq, Hash, Debug)]
+struct GameSet;
+
+fn game_setup_messages(
+    mut sessions: Query<&mut Session, With<WebSocketClient>>,
+    mut server_state: ResMut<NextState<ServerState>>,
+    mut commands: Commands,
+) {
+    let Ok(mut session) = sessions.get_single_mut() else {
+        return;
+    };
+
+    let session = &mut *session;
+
+    for message in session.recv.drain(..) {
+        let server_packet = GameServerPacket::from(message.payload.as_ref());
+        info!("{server_packet:?}");
+
+        match server_packet {
+            GameServerPacket::Hello => unimplemented!(),
+
+            GameServerPacket::CreateGame(lobby_id, players) => {
+                for (player_id, player_credentials) in players.into_iter() {
+                    commands.spawn((
+                        Name::new("Player"),
+                        LobbyMember::from(lobby_id),
+                        Player::from(player_id),
+                        player_credentials,
+                    ));
+                }
+
+                server_state.set(ServerState::WaitingForPlayers);
+            }
+        }
+    }
+}
+
+// waiting for players
+
+#[derive(SystemSet, Clone, Eq, PartialEq, Hash, Debug)]
+struct PlayersJoiningSet;
+
+#[derive(Component, Reflect, Debug)]
+struct UnauthenticatedSession;
+
+fn setup_waiting_for_players(
+    mut commands: Commands,
+    mut sessions: Query<&mut Session, With<WebSocketClient>>,
+    lobby_members: Query<&LobbyMember>,
+) {
+    info!("Waiting flor players");
+
+    commands.spawn((
+        Name::new("Player session observer"),
+        Observer::new(on_connected_while_waiting),
+        StateScoped(ServerState::WaitingForPlayers),
+    ));
+
+    let lobby_id = lobby_members.iter().next().unwrap().lobby_id;
+    let mut lobby_session = sessions.single_mut();
+    let message: String = GameClientPacket::GameCreated(lobby_id).into();
+    lobby_session.send.push(Bytes::from_owner(message));
+}
+
+fn on_connected_while_waiting(
+    trigger: Trigger<OnAdd, Session>,
+    parent: Query<&Parent>,
+    sessions: Query<Entity, (With<Session>, Without<PlayerCredentials>)>,
+    mut writer: EventWriter<ToClients<RequestAuthentication>>,
+    mut commands: Commands,
+) {
+    let client = trigger.entity();
+    let Ok(_) = parent.get(client) else {
+        warn!(
+            "{:?} connected without parent while waiting for players",
+            client
+        );
+        return;
+    };
+
+    commands.entity(client).insert(Replicated);
+
+    info!("{:?} connected", client);
+    let x = sessions.iter().collect::<Vec<_>>();
+    info!("{:?} sessions", x);
+
+    writer.send(ToClients {
+        mode: SendMode::Direct(client),
+        event: RequestAuthentication,
+    });
+}
+
+fn player_authentication_handler(
+    mut reader: EventReader<FromClient<AuthenticatePlayer>>,
+    players: Query<(Entity, &Player, &PlayerCredentials)>,
+    mut commands: Commands,
+    mut writer: EventWriter<PlayerAuthenticated>,
+) {
+    info_once!("Listening for auth requests");
+
+    for &FromClient {
+        client_entity: session_entity,
+        event: ref new_event,
+    } in reader.read()
+    {
+        info!("Received auth request from {:?}", session_entity);
+
+        let x = players
+            .iter()
+            .filter(|(_, player, _)| player.id == new_event.id)
+            .map(|(entity, _, credentials)| (entity, credentials))
+            .collect::<Vec<_>>();
+
+        let &[(player_entity, creds)] = x.as_slice() else {
+            commands.trigger_targets(Disconnect::new("Player id not found"), session_entity);
+            warn!("player not found");
+            break;
+        };
+
+        if *creds != new_event.credentials {
+            commands.trigger_targets(Disconnect::new("Unauthorized"), session_entity);
+            warn!("credentials don't match");
+            break;
+        }
+
+        info!("User {:?} authenticated", player_entity);
+
+        writer.send(PlayerAuthenticated {
+            player: player_entity,
+            session: session_entity,
+        });
+    }
+}
+
+fn all_players_joined(
+    players: Query<(), With<Player>>,
+    authenticated_players: Query<(), With<Replicated>>,
+    mut state: ResMut<NextState<ServerState>>,
+) {
+    let total_player_count = players.iter().count();
+    let connected_player_count = authenticated_players.iter().count();
+
+    if total_player_count == connected_player_count {
+        state.set(ServerState::Playing)
+    }
+}
+
+#[derive(Event, Reflect, Debug)]
+pub(crate) struct PlayerAuthenticated {
+    pub(crate) player: Entity,
+    pub(crate) session: Entity,
+}
+
+// logging
 
 fn on_opened(trigger: Trigger<OnAdd, Server>, servers: Query<&LocalAddr>) {
     let server = trigger.entity();
@@ -167,32 +452,6 @@ fn on_connected(
     } else {
         return;
     };
-}
-
-fn recv_lobby_messages(
-    mut sessions: Query<&mut Session, With<WebSocketClient>>,
-    servers: Query<&LocalAddr, With<WebSocketServer>>,
-) {
-    for mut session in &mut sessions {
-        let session = &mut *session;
-
-        for message in session.recv.drain(RangeFull::default()) {
-            let server_packet = GameServerPacket::from(message.payload.as_ref());
-            info!("{server_packet:?}");
-
-            match server_packet {
-                GameServerPacket::Hello => {
-                    let server_address = servers.get_single().unwrap().0;
-                    let response: String = GameClientPacket::Available(server_address).into();
-                    session.send.push(Bytes::from_owner(response));
-                }
-
-                GameServerPacket::CreateGame(_) => {
-                    todo!()
-                }
-            }
-        }
-    }
 }
 
 fn on_disconnected(trigger: Trigger<Disconnected>, servers: Query<&Parent>, names: Query<&Name>) {

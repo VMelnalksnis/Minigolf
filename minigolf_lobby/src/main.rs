@@ -1,14 +1,13 @@
 mod game;
 mod user;
 
+use minigolf::lobby::LobbyMember;
 use {
     crate::{game::GameServerPlugin, user::UserPlugin},
     aeronet_websocket::server::WebSocketServerPlugin,
     bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*},
     core::time::Duration,
-    minigolf::lobby::LobbyId,
     std::net::{IpAddr, Ipv6Addr, SocketAddr},
-    uuid::Uuid,
 };
 
 const TICK_RATE: f64 = 32.0;
@@ -25,6 +24,7 @@ fn main() -> AppExit {
         .add_plugins(WebSocketServerPlugin)
         .add_plugins((GameServerPlugin, UserPlugin))
         .insert_resource(Time::<Fixed>::from_hz(TICK_RATE))
+        .add_observer(on_lobby_member_removed)
         .run()
 }
 
@@ -49,25 +49,6 @@ impl FromWorld for Args {
     }
 }
 
-#[derive(Debug, Component, Reflect, Copy, Clone)]
-struct LobbyMember {
-    lobby_id: LobbyId,
-}
-
-impl LobbyMember {
-    fn new() -> Self {
-        LobbyMember {
-            lobby_id: Uuid::new_v4().as_u64_pair().0,
-        }
-    }
-}
-
-impl From<LobbyId> for LobbyMember {
-    fn from(value: LobbyId) -> Self {
-        LobbyMember { lobby_id: value }
-    }
-}
-
 #[derive(Debug, Component, Reflect)]
 struct Lobby {
     owner: Entity,
@@ -76,5 +57,42 @@ struct Lobby {
 impl Lobby {
     fn new(owner: Entity) -> Self {
         Lobby { owner }
+    }
+}
+
+fn on_lobby_member_removed(
+    trigger: Trigger<OnRemove, LobbyMember>,
+    members: Query<(Entity, &LobbyMember), Without<Lobby>>,
+    lobby: Query<(Entity, &LobbyMember), With<Lobby>>,
+    mut commands: Commands,
+) {
+    let entity = trigger.entity();
+    let Ok((_, lobby_member)) = members.get(entity) else {
+        return;
+    };
+
+    let id = lobby_member.lobby_id;
+    info!("{:?} left lobby {:?}", entity, id);
+
+    let Some(lobby_entity) = lobby
+        .iter()
+        .filter(|(_, l)| l.lobby_id == id)
+        .map(|(entity, _)| entity)
+        .next()
+    else {
+        info!("No lobby found with id {:?}", id);
+        return;
+    };
+
+    let member_count = members
+        .iter()
+        .filter(|(e, m)| *e != entity && m.lobby_id == id)
+        .count();
+
+    info!("{:?} members remaining in lobby {:?}", member_count, id);
+
+    if member_count == 0 {
+        info!("Deleting lobby {:?}", id);
+        commands.entity(lobby_entity).despawn();
     }
 }
