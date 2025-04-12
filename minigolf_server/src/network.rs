@@ -306,7 +306,7 @@ fn setup_waiting_for_players(
     mut sessions: Query<&mut Session, With<WebSocketClient>>,
     lobby_members: Query<&LobbyMember>,
 ) {
-    info!("Waiting flor players");
+    info!("Waiting for players");
 
     commands.spawn((
         Name::new("Player session observer"),
@@ -392,13 +392,14 @@ fn player_authentication_handler(
 
 fn all_players_joined(
     players: Query<(), With<Player>>,
-    authenticated_players: Query<(), With<Replicated>>,
+    authenticated_players: Query<(), (With<Player>, With<Replicated>)>,
     mut state: ResMut<NextState<ServerState>>,
 ) {
     let total_player_count = players.iter().count();
     let connected_player_count = authenticated_players.iter().count();
 
     if total_player_count == connected_player_count {
+        info!("All {:?} players joined", total_player_count);
         state.set(ServerState::Playing)
     }
 }
