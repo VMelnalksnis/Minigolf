@@ -65,6 +65,11 @@ pub fn main() -> AppExit {
         .add_systems(Startup, setup)
         .add_observer(on_disconnected)
         .insert_resource(Time::<Fixed>::from_hz(128.0))
+        .insert_resource::<DeactivationTime>(DeactivationTime(0.2))
+        .insert_resource::<SleepingThreshold>(SleepingThreshold {
+            angular: 1.0,
+            ..default()
+        })
         .add_systems(FixedUpdate, recv_input.run_if(server_or_singleplayer))
         .add_systems(FixedUpdate, reset)
         .add_systems(FixedUpdate, player_can_move)
