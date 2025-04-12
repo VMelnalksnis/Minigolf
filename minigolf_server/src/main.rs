@@ -12,6 +12,7 @@ mod network;
 mod server;
 
 mod config;
+mod course;
 
 #[cfg(not(target_family = "wasm"))]
 fn main() {

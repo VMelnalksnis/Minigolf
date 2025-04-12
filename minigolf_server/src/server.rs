@@ -1,14 +1,12 @@
-use bevy::input::common_conditions::input_toggle_active;
-use bevy_inspector_egui::bevy_egui::EguiPlugin;
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use {
     crate::{
         config::ServerPlugin,
+        course::{Course, CoursePlugin, Hole, PlayerScore},
         network::{PlayerAuthenticated, ServerNetworkPlugin},
     },
     aeronet::io::connection::Disconnected,
     avian3d::prelude::*,
-    bevy::{ecs::observer::TriggerTargets, prelude::*},
+    bevy::prelude::*,
     bevy_replicon::{prelude::*, server::increment_tick},
     minigolf::{LevelMesh, MinigolfPlugin, Player, PlayerInput},
     std::net::{IpAddr, Ipv6Addr, SocketAddr},
@@ -27,7 +25,7 @@ enum GameLayer {
     Player,
 }
 
-/// `move_box` demo server
+/// minigolf server
 #[derive(Debug, Resource, clap::Parser)]
 pub(crate) struct Args {
     /// Port to listen for WebTransport connections on
@@ -62,6 +60,7 @@ pub fn main() -> AppExit {
             PhysicsPlugins::default(),
             PhysicsDebugPlugin::default(),
         ))
+        .add_plugins(CoursePlugin)
         .add_systems(Startup, setup)
         .add_observer(on_disconnected)
         .insert_resource(Time::<Fixed>::from_hz(128.0))
@@ -75,11 +74,15 @@ pub fn main() -> AppExit {
         .add_systems(FixedUpdate, player_can_move)
         .add_systems(FixedPreUpdate, increment_tick)
         .add_systems(Update, on_player_authenticated)
-        .add_observer(on_hole_added)
-        .register_type::<Course>()
-        .register_type::<Hole>()
-        .init_state::<CourseState>()
+        .add_systems(Update, move_player)
+        .add_event::<ValidPlayerInput>()
         .run()
+}
+
+#[derive(Event, Reflect, Debug)]
+pub(crate) struct ValidPlayerInput {
+    pub(crate) player: Entity,
+    input: PlayerInput,
 }
 
 #[derive(Component, Debug)]
@@ -100,57 +103,17 @@ fn reset(
     >,
 ) {
     for (mut transform, mut linear, mut angular, last_position) in &mut transforms {
-        if transform.translation.y < -0.15 {
-            linear.x = 0.0;
-            linear.y = 0.0;
-            linear.z = 0.0;
-
-            angular.x = 0.0;
-            angular.y = 0.0;
-            angular.z = 0.0;
+        if transform.translation.z.abs() > 1.1
+            || transform.translation.x < -1.1
+            || transform.translation.x > 9.5
+        {
+            linear.0 = Vec3::ZERO;
+            angular.0 = Vec3::ZERO;
 
             info!("Last position: {last_position:?}");
             transform.translation = last_position.position;
             transform.rotation = last_position.rotation;
             info!("{transform:?}");
-        }
-    }
-}
-
-#[derive(Component, Reflect, Debug)]
-struct Course {
-    holes: Vec<Entity>,
-}
-
-impl Course {
-    fn new() -> Self {
-        Course { holes: vec![] }
-    }
-}
-
-#[derive(States, Default, Clone, Eq, PartialEq, Hash, Debug)]
-enum CourseState {
-    #[default]
-    WaitingForGame,
-    WaitingForPlayers,
-    Playing,
-    Completed,
-}
-
-#[derive(Component, Reflect, Debug)]
-struct Hole {
-    start_position: Vec3,
-}
-
-#[derive(Component, Reflect, Debug)]
-struct PlayerScore {
-    score: u32,
-}
-
-impl Hole {
-    fn new() -> Self {
-        Hole {
-            start_position: Vec3::ZERO,
         }
     }
 }
@@ -196,51 +159,48 @@ fn setup(mut commands: Commands, server: Res<AssetServer>) {
         .set_parent(course);
 }
 
-fn on_hole_added(trigger: Trigger<OnAdd, Hole>, mut course: Query<&mut Course>) {
-    let hole_entity = trigger.entity();
-    let mut course = course.single_mut();
-    course.holes.push(hole_entity);
-}
-
 fn recv_input(
-    mut commands: Commands,
     mut inputs: EventReader<FromClient<PlayerInput>>,
-    mut children: Query<&PlayerSession>,
-    mut players: Query<(&Transform, &mut PlayerInput, &Player)>,
+    mut sessions: Query<&PlayerSession>,
+    mut players: Query<&Player>,
+    mut writer: EventWriter<ValidPlayerInput>,
 ) {
     for &FromClient {
         client_entity,
-        event: ref new_input,
+        event: ref input,
     } in inputs.read()
     {
-        info!("Entity: {client_entity:?}");
-        for component in client_entity.components() {
-            info!("Component: {component:?}");
-        }
-        for component in client_entity.entities() {
-            info!("Entity: {component:?}");
-        }
-
-        let Ok(session) = children.get_mut(client_entity) else {
+        let Ok(session) = sessions.get_mut(client_entity) else {
+            warn!(
+                "Received player input from {:?} without a session",
+                client_entity
+            );
             continue;
         };
 
-        let Ok((transform, mut input, player)) = players.get_mut(session.player) else {
-            continue;
-        };
-
+        let player = players.get_mut(session.player).unwrap();
         if !player.can_move {
+            warn!(
+                "Received player input from {:?} (player {:?}) when it cannot move",
+                client_entity, player
+            );
             continue;
         }
 
-        *input = new_input.clone();
+        writer.send(ValidPlayerInput {
+            player: session.player,
+            input: input.clone(),
+        });
+    }
+}
 
-        info!("Input: {input:?}");
-        info!("Position: {transform:?}");
-
+fn move_player(mut reader: EventReader<ValidPlayerInput>, mut commands: Commands) {
+    for &ValidPlayerInput { ref input, player } in reader.read() {
         let force_vec = Vec3::new(input.movement.x, 0.0, input.movement.y).clamp_length_max(10.0);
-        let impulse = ExternalImpulse::new(force_vec).with_persistence(false);
-        commands.entity(session.player).insert(impulse);
+
+        commands
+            .entity(player)
+            .insert(ExternalImpulse::new(force_vec));
     }
 }
 
@@ -281,6 +241,7 @@ fn on_player_authenticated(mut reader: EventReader<PlayerAuthenticated>, mut com
                 position: initial_position,
                 rotation: Quat::IDENTITY,
             },
+            PlayerScore::default(),
             Replicated,
             RigidBody::Dynamic,
             Collider::sphere(0.021336),
