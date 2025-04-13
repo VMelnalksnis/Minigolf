@@ -1,14 +1,14 @@
 use {
     crate::{
         config::ServerPlugin,
-        course::{Course, CoursePlugin, Hole, HoleSensor, PlayerScore},
+        course::{CoursePlugin, HoleSensor, PlayerScore},
         network::{PlayerAuthenticated, ServerNetworkPlugin},
     },
     aeronet::io::connection::Disconnected,
     avian3d::prelude::*,
     bevy::prelude::*,
     bevy_replicon::{prelude::*, server::increment_tick},
-    minigolf::{LevelMesh, MinigolfPlugin, Player, PlayerInput},
+    minigolf::{MinigolfPlugin, Player, PlayerInput},
     std::net::{IpAddr, Ipv6Addr, SocketAddr},
 };
 
@@ -19,7 +19,7 @@ const WEB_SOCKET_PORT: u16 = 25566;
 const LOBBY_ADDRESS: SocketAddr = SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 25568);
 
 #[derive(PhysicsLayer, Default)]
-enum GameLayer {
+pub(crate) enum GameLayer {
     #[default]
     Default,
     Player,
@@ -61,7 +61,6 @@ pub fn main() -> AppExit {
             PhysicsDebugPlugin::default(),
         ))
         .add_plugins(CoursePlugin)
-        .add_systems(Startup, setup)
         .add_observer(on_disconnected)
         .insert_resource(Time::<Fixed>::from_hz(128.0))
         .insert_resource::<DeactivationTime>(DeactivationTime(0.2))
@@ -116,61 +115,6 @@ fn reset(
             info!("{transform:?}");
         }
     }
-}
-
-fn setup(mut commands: Commands, server: Res<AssetServer>) {
-    let scene = commands
-        .spawn((Name::new("Scene"), SceneRoot::default()))
-        .id();
-
-    commands.spawn((
-        Name::new("Camera"),
-        Camera3d::default(),
-        Transform::from_xyz(8.0, 0.0, 6.0),
-    ));
-
-    let course = commands
-        .spawn((
-            Name::new("Course"),
-            Course::new(),
-            Transform::default(),
-            Visibility::default(),
-        ))
-        .set_parent(scene)
-        .id();
-
-    let hole1_path = "Level1.glb#Mesh0/Primitive0";
-    let level_mesh_handle: Handle<Mesh> = server.load(hole1_path);
-
-    let hole_1 = commands
-        .spawn((
-            Name::new("Hole 1"),
-            LevelMesh::from_path(hole1_path),
-            Hole::new(),
-            Replicated,
-            Transform::from_xyz(4.0, -1.0, 0.0).with_scale(Vec3::new(5.0, 1.0, 1.0)),
-            RigidBody::Static,
-            ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
-            Mesh3d(level_mesh_handle),
-            CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
-            Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
-            Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
-        ))
-        .set_parent(course)
-        .id();
-
-    commands
-        .spawn((
-            Name::new("Hole 1 sensor"),
-            Transform::from_xyz(0.8, 0.9, 0.0),
-            Sensor,
-            HoleSensor::new(hole_1),
-            RigidBody::Static,
-            CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-            Collider::cuboid(0.2, 0.19, 1.0),
-            CollidingEntities::default(),
-        ))
-        .set_parent(hole_1);
 }
 
 fn recv_input(
@@ -246,10 +190,6 @@ fn player_can_move(
         }
     }
 }
-
-//
-// server logic
-//
 
 fn on_player_authenticated(mut reader: EventReader<PlayerAuthenticated>, mut commands: Commands) {
     for authenticated in reader.read() {

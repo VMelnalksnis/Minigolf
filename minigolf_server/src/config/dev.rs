@@ -20,10 +20,16 @@ impl Plugin for ServerPlugin {
             .add_plugins(bevy::diagnostic::SystemInformationDiagnosticsPlugin)
             .add_plugins(bevy::render::diagnostic::RenderDiagnosticsPlugin)
             .add_plugins(PerfUiPlugin)
-            .add_systems(Startup, enable_perf);
+            .add_systems(Startup, setup);
     }
 }
 
-fn enable_perf(mut commands: Commands) {
+fn setup(mut commands: Commands) {
+    commands.spawn((
+        Name::new("Camera"),
+        Camera3d::default(),
+        Transform::from_xyz(8.0, 0.0, 6.0),
+    ));
+
     commands.spawn(PerfUiDefaultEntries::default());
 }

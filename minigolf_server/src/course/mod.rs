@@ -1,9 +1,13 @@
-use crate::server::ValidPlayerInput;
-use avian3d::prelude::CollidingEntities;
-use bevy::app::App;
-use bevy::math::Vec3;
-use bevy::prelude::*;
-use minigolf::Player;
+use {
+    crate::{
+        ServerState,
+        server::{GameLayer, ValidPlayerInput},
+    },
+    avian3d::prelude::*,
+    bevy::{app::App, math::Vec3, prelude::*},
+    bevy_replicon::prelude::Replicated,
+    minigolf::{LevelMesh, Player},
+};
 
 pub(crate) struct CoursePlugin;
 
@@ -15,6 +19,9 @@ impl Plugin for CoursePlugin {
             .register_type::<PlayerScore>();
 
         app.add_observer(on_hole_added);
+
+        app.add_systems(OnEnter(ServerState::WaitingForPlayers), setup_level);
+        app.add_systems(OnExit(ServerState::Playing), despawn_level);
 
         app.add_systems(Update, (increment_score, log_score_changes));
         app.add_systems(FixedUpdate, handle_hole_sensors);
@@ -60,6 +67,55 @@ pub(crate) struct PlayerScore {
     score: u32,
 }
 
+fn setup_level(mut commands: Commands, server: Res<AssetServer>) {
+    let scene = commands
+        .spawn((Name::new("Scene"), SceneRoot::default()))
+        .id();
+
+    let course = commands
+        .spawn((
+            Name::new("Course"),
+            Course::new(),
+            Transform::default(),
+            Visibility::default(),
+        ))
+        .set_parent(scene)
+        .id();
+
+    let hole1_path = "Level1.glb#Mesh0/Primitive0";
+    let level_mesh_handle: Handle<Mesh> = server.load(hole1_path);
+
+    let hole_1 = commands
+        .spawn((
+            Name::new("Hole 1"),
+            LevelMesh::from_path(hole1_path),
+            Hole::new(),
+            Replicated,
+            Transform::from_xyz(4.0, -1.0, 0.0).with_scale(Vec3::new(5.0, 1.0, 1.0)),
+            RigidBody::Static,
+            ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
+            Mesh3d(level_mesh_handle),
+            CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
+            Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
+            Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
+        ))
+        .set_parent(course)
+        .id();
+
+    commands
+        .spawn((
+            Name::new("Hole 1 sensor"),
+            Transform::from_xyz(0.8, 0.9, 0.0),
+            Sensor,
+            HoleSensor::new(hole_1),
+            RigidBody::Static,
+            CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
+            Collider::cuboid(0.2, 0.19, 1.0),
+            CollidingEntities::default(),
+        ))
+        .set_parent(hole_1);
+}
+
 fn on_hole_added(trigger: Trigger<OnAdd, Hole>, mut course: Query<&mut Course>) {
     let hole_entity = trigger.entity();
     let mut course = course.single_mut();
@@ -98,5 +154,11 @@ fn handle_hole_sensors(
                 info!("Player {:?} left hole {:?}", player, hole)
             }
         }
+    }
+}
+
+fn despawn_level(scenes: Query<Entity, With<SceneRoot>>, mut commands: Commands) {
+    for scene in scenes.iter() {
+        commands.entity(scene).despawn();
     }
 }
