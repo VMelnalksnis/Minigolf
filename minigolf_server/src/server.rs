@@ -1,7 +1,8 @@
 use {
     crate::{
+        ServerState,
         config::ServerPlugin,
-        course::{CoursePlugin, HoleSensor, PlayerScore},
+        course::{CoursePlugin, CurrentHole, HoleSensor, PlayerScore},
         network::{PlayerAuthenticated, ServerNetworkPlugin},
     },
     aeronet::io::connection::Disconnected,
@@ -68,12 +69,20 @@ pub fn main() -> AppExit {
             angular: 1.0,
             ..default()
         })
-        .add_systems(FixedUpdate, recv_input.run_if(server_or_singleplayer))
-        .add_systems(FixedUpdate, reset)
-        .add_systems(FixedUpdate, player_can_move)
         .add_systems(FixedPreUpdate, increment_tick)
-        .add_systems(Update, on_player_authenticated)
-        .add_systems(Update, (move_player, reset_can_move))
+        .add_systems(FixedUpdate, recv_input.run_if(server_or_singleplayer))
+        .add_systems(
+            Update,
+            on_player_authenticated.run_if(in_state(ServerState::WaitingForPlayers)),
+        )
+        .add_systems(
+            FixedUpdate,
+            player_can_move.run_if(in_state(ServerState::Playing)),
+        )
+        .add_systems(
+            Update,
+            (move_player, reset_can_move).run_if(in_state(ServerState::Playing)),
+        )
         .add_event::<ValidPlayerInput>()
         .run()
 }
@@ -85,36 +94,9 @@ pub(crate) struct ValidPlayerInput {
 }
 
 #[derive(Component, Debug)]
-struct LastPlayerPosition {
-    position: Vec3,
-    rotation: Quat,
-}
-
-fn reset(
-    mut transforms: Query<
-        (
-            &mut Transform,
-            &mut LinearVelocity,
-            &mut AngularVelocity,
-            &LastPlayerPosition,
-        ),
-        With<Player>,
-    >,
-) {
-    for (mut transform, mut linear, mut angular, last_position) in &mut transforms {
-        if transform.translation.z.abs() > 1.1
-            || transform.translation.x < -1.1
-            || transform.translation.x > 9.5
-        {
-            linear.0 = Vec3::ZERO;
-            angular.0 = Vec3::ZERO;
-
-            info!("Last position: {last_position:?}");
-            transform.translation = last_position.position;
-            transform.rotation = last_position.rotation;
-            info!("{transform:?}");
-        }
-    }
+pub(crate) struct LastPlayerPosition {
+    pub(crate) position: Vec3,
+    pub(crate) rotation: Quat,
 }
 
 fn recv_input(
@@ -174,9 +156,10 @@ fn player_can_move(
         Added<Sleeping>,
     >,
     holes: Query<&CollidingEntities, With<HoleSensor>>,
+    mut current_hole: ResMut<CurrentHole>,
 ) {
     for (entity, mut player, transform, mut position) in &mut player_velocity {
-        let is_in_hole = holes.single().contains(&entity);
+        let is_in_hole = holes.iter().any(|h| h.contains(&entity));
 
         player.can_move = !is_in_hole;
 
@@ -187,13 +170,18 @@ fn player_can_move(
             info!("Last position: {position:?}");
         } else if is_in_hole {
             info!("Player {:?} completed the hole", entity);
+            current_hole.players.push(*player);
         }
     }
 }
 
-fn on_player_authenticated(mut reader: EventReader<PlayerAuthenticated>, mut commands: Commands) {
+fn on_player_authenticated(
+    mut reader: EventReader<PlayerAuthenticated>,
+    current_hole: Res<CurrentHole>,
+    mut commands: Commands,
+) {
     for authenticated in reader.read() {
-        let initial_position = Vec3::new(0.0, 0.5, 0.0);
+        let initial_position = current_hole.hole.start_position;
 
         commands.entity(authenticated.player).insert((
             PlayerInput::default(),
