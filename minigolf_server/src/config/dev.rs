@@ -5,6 +5,7 @@ use {
         prelude::*,
     },
     bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin},
+    iyes_perf_ui::prelude::*,
 };
 
 impl Plugin for ServerPlugin {
@@ -13,6 +14,16 @@ impl Plugin for ServerPlugin {
             .add_plugins(EguiPlugin)
             .add_plugins(
                 WorldInspectorPlugin::default().run_if(input_toggle_active(true, KeyCode::Escape)),
-            );
+            )
+            .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin::default())
+            .add_plugins(bevy::diagnostic::EntityCountDiagnosticsPlugin)
+            .add_plugins(bevy::diagnostic::SystemInformationDiagnosticsPlugin)
+            .add_plugins(bevy::render::diagnostic::RenderDiagnosticsPlugin)
+            .add_plugins(PerfUiPlugin)
+            .add_systems(Startup, enable_perf);
     }
+}
+
+fn enable_perf(mut commands: Commands) {
+    commands.spawn(PerfUiDefaultEntries::default());
 }

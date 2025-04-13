@@ -9,7 +9,8 @@ authors.workspace = true
 minigolf = { path = "../minigolf" }
 
 bevy = { workspace = true }
-bevy-inspector-egui = { workspace = true, features = ["bevy_render"] }
+bevy-inspector-egui = { workspace = true, features = ["bevy_render"], optional = true }
+iyes_perf_ui = { workspace = true, optional = true }
 avian3d = { workspace = true, features = ["3d", "f32", "default-collider", "parry-f32", "bevy_scene", "bevy_picking", "debug-plugin", "parallel", "simd", "collider-from-mesh"] }
 clap = { workspace = true, features = ["derive"] }
 
@@ -21,5 +22,4 @@ bevy_replicon = { workspace = true, features = ["server"] }
 aeronet_replicon = { workspace = true, features = ["server"] }
 
 [features]
-default = ["ui"]
-ui = []
+ui = ["dep:bevy-inspector-egui", "dep:iyes_perf_ui"]

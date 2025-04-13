@@ -1,4 +1,3 @@
-use minigolf::lobby::LobbyId;
 use {
     crate::network::web_socket_config,
     aeronet::io::{
@@ -12,9 +11,10 @@ use {
     bevy_egui::{EguiContexts, EguiPlugin, egui},
     bevy_inspector_egui::quick::WorldInspectorPlugin,
     bevy_replicon::prelude::*,
+    iyes_perf_ui::prelude::*,
     minigolf::{
         AuthenticatePlayer, PlayerCredentials, RequestAuthentication,
-        lobby::{PlayerId, UserClientPacket, UserServerPacket},
+        lobby::{LobbyId, PlayerId, UserClientPacket, UserServerPacket},
     },
 };
 
@@ -34,6 +34,12 @@ impl Plugin for ClientUiPlugin {
             )
             .init_resource::<GlobalUi>()
             .init_resource::<LobbyServerUi>()
+            .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin::default())
+            .add_plugins(bevy::diagnostic::EntityCountDiagnosticsPlugin)
+            .add_plugins(bevy::diagnostic::SystemInformationDiagnosticsPlugin)
+            .add_plugins(bevy::render::diagnostic::RenderDiagnosticsPlugin)
+            .add_plugins(PerfUiPlugin)
+            .add_systems(Startup, enable_perf)
             .add_systems(
                 OnEnter(ServerState::LobbyServer),
                 connect_to_default_lobby_server,
@@ -57,6 +63,10 @@ impl Plugin for ClientUiPlugin {
             .configure_sets(Update, LobbyUiSet.run_if(in_state(ServerState::Lobby)))
             .add_systems(Update, lobby_ui.in_set(LobbyUiSet));
     }
+}
+
+fn enable_perf(mut commands: Commands) {
+    commands.spawn(PerfUiDefaultEntries::default());
 }
 
 #[derive(States, Reflect, Default, Debug, Clone, PartialEq, Eq, Hash)]
