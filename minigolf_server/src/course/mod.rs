@@ -120,13 +120,13 @@ fn setup_level(mut commands: Commands, server: Res<AssetServer>) {
         .set_parent(scene)
         .id();
 
-    let hole1_path = "Level1.glb#Mesh0/Primitive0";
+    let hole1_path = "Level2.glb#Mesh0/Primitive0";
 
     for index in 1..3 {
         let level_mesh_handle: Handle<Mesh> = server.load(hole1_path);
 
-        let x_offset = (index - 1) as f32 * 15.0;
-        let start_position = Vec3::new(x_offset, 0.5, 0.0);
+        let x_offset = (index - 1) as f32 * 10.0;
+        let start_position = Vec3::new(x_offset, 2.0, 0.0);
 
         let hole = commands
             .spawn((
@@ -134,7 +134,7 @@ fn setup_level(mut commands: Commands, server: Res<AssetServer>) {
                 LevelMesh::from_path(hole1_path),
                 Hole { start_position },
                 Replicated,
-                Transform::from_xyz(4.0 + x_offset, -1.0, 0.0).with_scale(Vec3::new(5.0, 1.0, 1.0)),
+                Transform::from_xyz(x_offset, 0.0, 0.0),
                 RigidBody::Static,
                 ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
                 Mesh3d(level_mesh_handle),
@@ -148,7 +148,7 @@ fn setup_level(mut commands: Commands, server: Res<AssetServer>) {
         commands
             .spawn((
                 Name::new(format!("Hole {} sensor", index)),
-                Transform::from_xyz(0.8, 0.9, 0.0),
+                Transform::from_xyz(1.6, -0.11, 0.0),
                 Sensor,
                 HoleSensor::new(hole),
                 RigidBody::Static,
@@ -161,12 +161,12 @@ fn setup_level(mut commands: Commands, server: Res<AssetServer>) {
         commands
             .spawn((
                 Name::new(format!("Hole {} bounding box", index)),
-                Transform::from_xyz(0.0, 1.0, 0.0),
+                Transform::from_xyz(1.0, 0.0, 0.0),
                 Sensor,
                 HoleBoundingBox::new(hole),
                 RigidBody::Static,
                 CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-                Collider::cuboid(2.1, 2.1, 2.1),
+                Collider::cuboid(3.1, 2.1, 2.1),
                 CollidingEntities::default(),
             ))
             .set_parent(hole);

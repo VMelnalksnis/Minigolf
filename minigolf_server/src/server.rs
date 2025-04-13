@@ -199,6 +199,7 @@ fn on_player_authenticated(
             Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
             Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
             AngularDamping(3.0),
+            // SweptCcd::default(),
         ));
 
         commands

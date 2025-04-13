@@ -28,7 +28,7 @@ fn setup(mut commands: Commands) {
     commands.spawn((
         Name::new("Camera"),
         Camera3d::default(),
-        Transform::from_xyz(8.0, 0.0, 6.0),
+        Transform::from_xyz(3.0, 0.0, 10.0),
     ));
 
     commands.spawn(PerfUiDefaultEntries::default());

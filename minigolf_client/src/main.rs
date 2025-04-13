@@ -12,6 +12,7 @@ use {
             mouse::{MouseMotion, MouseWheel},
             touch::TouchPhase,
         },
+        pbr::{DirectionalLightShadowMap, ShadowFilteringMethod},
         prelude::*,
         window::PrimaryWindow,
     },
@@ -135,18 +136,23 @@ fn setup_level(mut commands: Commands) {
 
     // light
     commands.spawn((
-        PointLight {
+        DirectionalLight {
+            illuminance: 1000.0,
             shadows_enabled: true,
+            shadow_depth_bias: 0.005,
             ..default()
         },
-        Transform::from_xyz(4.0, 8.0, 4.0),
+        Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -45.0, 0.0, -45.0)),
     ));
+
+    commands.insert_resource::<DirectionalLightShadowMap>(DirectionalLightShadowMap { size: 4096 });
 
     // camera
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(-2.5, 1.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_xyz(-2.5, 5.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
         Msaa::Sample8,
+        ShadowFilteringMethod::Gaussian,
     ));
 }
 
@@ -356,7 +362,7 @@ fn scroll_events(
             continue;
         };
 
-        camera_transform.translation.y += 1.0 * mouse_wheel.y.signum();
+        camera_transform.translation.y += 0.1 * mouse_wheel.y.signum();
     }
 }
 
