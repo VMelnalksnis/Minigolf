@@ -1,7 +1,9 @@
 use crate::server::ValidPlayerInput;
+use avian3d::prelude::CollidingEntities;
 use bevy::app::App;
 use bevy::math::Vec3;
 use bevy::prelude::*;
+use minigolf::Player;
 
 pub(crate) struct CoursePlugin;
 
@@ -9,11 +11,13 @@ impl Plugin for CoursePlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<Course>()
             .register_type::<Hole>()
+            .register_type::<HoleSensor>()
             .register_type::<PlayerScore>();
 
         app.add_observer(on_hole_added);
 
         app.add_systems(Update, (increment_score, log_score_changes));
+        app.add_systems(FixedUpdate, handle_hole_sensors);
     }
 }
 
@@ -37,6 +41,17 @@ impl Hole {
         Hole {
             start_position: Vec3::ZERO,
         }
+    }
+}
+
+#[derive(Component, Reflect, Debug)]
+pub(crate) struct HoleSensor {
+    hole: Entity,
+}
+
+impl HoleSensor {
+    pub(crate) fn new(hole: Entity) -> Self {
+        HoleSensor { hole }
     }
 }
 
@@ -68,5 +83,20 @@ fn log_score_changes(scores: Query<(Entity, &PlayerScore), Changed<PlayerScore>>
             "Increased score to {:?} for player {:?}",
             score.score, entity
         );
+    }
+}
+
+fn handle_hole_sensors(
+    holes: Query<(Entity, &CollidingEntities), (With<HoleSensor>, Changed<CollidingEntities>)>,
+    players: Query<(Entity, &Player)>,
+) {
+    for (hole, hole_collisions) in holes.iter() {
+        for (player_entity, player) in players.iter() {
+            if hole_collisions.contains(&player_entity) {
+                info!("Player {:?} collided with hole {:?}", player, hole)
+            } else {
+                info!("Player {:?} left hole {:?}", player, hole)
+            }
+        }
     }
 }

@@ -1,7 +1,7 @@
 use {
     crate::{
         config::ServerPlugin,
-        course::{Course, CoursePlugin, Hole, PlayerScore},
+        course::{Course, CoursePlugin, Hole, HoleSensor, PlayerScore},
         network::{PlayerAuthenticated, ServerNetworkPlugin},
     },
     aeronet::io::connection::Disconnected,
@@ -74,7 +74,7 @@ pub fn main() -> AppExit {
         .add_systems(FixedUpdate, player_can_move)
         .add_systems(FixedPreUpdate, increment_tick)
         .add_systems(Update, on_player_authenticated)
-        .add_systems(Update, move_player)
+        .add_systems(Update, (move_player, reset_can_move))
         .add_event::<ValidPlayerInput>()
         .run()
 }
@@ -126,7 +126,7 @@ fn setup(mut commands: Commands, server: Res<AssetServer>) {
     commands.spawn((
         Name::new("Camera"),
         Camera3d::default(),
-        Transform::from_xyz(-5.0, 2.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_xyz(8.0, 0.0, 6.0),
     ));
 
     let course = commands
@@ -142,7 +142,7 @@ fn setup(mut commands: Commands, server: Res<AssetServer>) {
     let hole1_path = "Level1.glb#Mesh0/Primitive0";
     let level_mesh_handle: Handle<Mesh> = server.load(hole1_path);
 
-    commands
+    let hole_1 = commands
         .spawn((
             Name::new("Hole 1"),
             LevelMesh::from_path(hole1_path),
@@ -156,7 +156,21 @@ fn setup(mut commands: Commands, server: Res<AssetServer>) {
             Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
             Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
         ))
-        .set_parent(course);
+        .set_parent(course)
+        .id();
+
+    commands
+        .spawn((
+            Name::new("Hole 1 sensor"),
+            Transform::from_xyz(0.8, 0.9, 0.0),
+            Sensor,
+            HoleSensor::new(hole_1),
+            RigidBody::Static,
+            CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
+            Collider::cuboid(0.2, 0.19, 1.0),
+            CollidingEntities::default(),
+        ))
+        .set_parent(hole_1);
 }
 
 fn recv_input(
@@ -204,25 +218,31 @@ fn move_player(mut reader: EventReader<ValidPlayerInput>, mut commands: Commands
     }
 }
 
+fn reset_can_move(mut reader: EventReader<ValidPlayerInput>, mut players: Query<&mut Player>) {
+    for input in reader.read() {
+        players.get_mut(input.player).unwrap().can_move = false;
+    }
+}
+
 fn player_can_move(
     mut player_velocity: Query<
-        (
-            &LinearVelocity,
-            &mut Player,
-            &Transform,
-            &mut LastPlayerPosition,
-        ),
-        Changed<LinearVelocity>,
+        (Entity, &mut Player, &Transform, &mut LastPlayerPosition),
+        Added<Sleeping>,
     >,
+    holes: Query<&CollidingEntities, With<HoleSensor>>,
 ) {
-    for (velocity, mut player, transform, mut position) in &mut player_velocity {
-        player.can_move = *velocity == LinearVelocity::ZERO;
+    for (entity, mut player, transform, mut position) in &mut player_velocity {
+        let is_in_hole = holes.single().contains(&entity);
+
+        player.can_move = !is_in_hole;
 
         if player.can_move {
             position.position = transform.translation;
             position.rotation = transform.rotation;
 
-            // info!("Last position: {position:?}");
+            info!("Last position: {position:?}");
+        } else if is_in_hole {
+            info!("Player {:?} completed the hole", entity);
         }
     }
 }
