@@ -2,17 +2,13 @@ use {
     crate::{LocalPlayer, input::camera::CameraInputPlugin},
     bevy::{
         app::App,
-        input::{
-            common_conditions::{input_just_released, input_pressed},
-            mouse::MouseMotion,
-            touch::TouchPhase,
-        },
+        input::{common_conditions::input_just_released, mouse::MouseMotion, touch::TouchPhase},
         prelude::*,
     },
     minigolf::{GameState, Player, PlayerInput},
 };
 
-mod camera;
+pub(crate) mod camera;
 
 pub(crate) struct MinigolfInputPlugin;
 
@@ -31,7 +27,9 @@ impl Plugin for MinigolfInputPlugin {
 
         app.add_systems(Update, check_whether_can_move.in_set(ValidateInputSet));
 
-        app.init_state::<InputState>().init_resource::<TouchState>();
+        app.init_state::<InputState>()
+            .init_state::<InputTarget>()
+            .init_resource::<TouchState>();
 
         app.configure_sets(
             Update,
@@ -43,14 +41,16 @@ impl Plugin for MinigolfInputPlugin {
         app.add_systems(
             Update,
             (
-                accumulate_mouse_movement.run_if(input_pressed(MouseButton::Left)),
-                send_inputs_to_server.run_if(input_just_released(MouseButton::Left)),
+                accumulate_mouse_movement.run_if(in_state(InputTarget::Movement)),
                 reset_inputs.run_if(input_just_released(MouseButton::Right)),
                 handle_touch,
                 draw_accumulated_inputs,
             )
                 .in_set(InputSet),
         );
+
+        app.add_observer(on_pointer_down)
+            .add_observer(on_pointer_up);
     }
 }
 
@@ -59,6 +59,60 @@ enum InputState {
     #[default]
     CanMove,
     CannotMove,
+}
+
+#[derive(States, Reflect, Default, Debug, Clone, PartialEq, Eq, Hash)]
+enum InputTarget {
+    #[default]
+    None,
+    Camera,
+    Movement,
+}
+
+fn on_pointer_down(
+    trigger: Trigger<Pointer<Down>>,
+    players: Query<(), With<LocalPlayer>>,
+    input_state: Res<State<InputState>>,
+    mut input_target: ResMut<NextState<InputTarget>>,
+) {
+    match players.get(trigger.entity()) {
+        Ok(_) => match input_state.get() {
+            InputState::CanMove => input_target.set(InputTarget::Movement),
+            InputState::CannotMove => input_target.set(InputTarget::Camera),
+        },
+        Err(_) => input_target.set(InputTarget::Camera),
+    }
+}
+
+fn on_pointer_up(
+    _trigger: Trigger<Pointer<Up>>,
+    input_state: Res<State<InputState>>,
+    mut writer: EventWriter<PlayerInput>,
+    mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>,
+    mut input_target: ResMut<NextState<InputTarget>>,
+) {
+    if *input_state.get() != InputState::CanMove {
+        input_target.set(InputTarget::None);
+        return;
+    }
+
+    let Ok(mut input) = inputs.get_single_mut() else {
+        error!("Multiple entities with accumulated inputs/local player marker ");
+        input_target.set(InputTarget::None);
+        return;
+    };
+
+    if input.input == Vec2::ZERO {
+        input_target.set(InputTarget::None);
+        return;
+    }
+
+    writer.send(PlayerInput {
+        movement: input.input,
+    });
+
+    input_target.set(InputTarget::None);
+    input.input = Vec2::ZERO;
 }
 
 #[derive(SystemSet, Clone, PartialEq, Eq, Hash, Debug)]
@@ -102,26 +156,6 @@ fn accumulate_mouse_movement(
 
         input.input = input.input.clamp_length_max(1.0);
     }
-}
-
-fn send_inputs_to_server(
-    mut writer: EventWriter<PlayerInput>,
-    mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>,
-) {
-    let Ok(mut input) = inputs.get_single_mut() else {
-        error!("Multiple entities with accumulated inputs/local player marker ");
-        return;
-    };
-
-    if input.input == Vec2::ZERO {
-        return;
-    }
-
-    writer.send(PlayerInput {
-        movement: input.input,
-    });
-
-    input.input = Vec2::ZERO;
 }
 
 fn reset_inputs(mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>) {

@@ -4,7 +4,7 @@ mod ui;
 
 use {
     crate::{
-        input::{AccumulatedInputs, MinigolfInputPlugin},
+        input::{AccumulatedInputs, MinigolfInputPlugin, camera::TargetTransform},
         network::ClientNetworkPlugin,
         ui::ClientUiPlugin,
     },
@@ -26,6 +26,7 @@ fn main() -> AppExit {
             DefaultPlugins,
             ClientUiPlugin,
             ClientNetworkPlugin,
+            MeshPickingPlugin,
             MinigolfPlugin,
             MinigolfInputPlugin,
         ))
@@ -61,7 +62,6 @@ fn setup_level(mut commands: Commands) {
         style.set_property("height", "100%").unwrap();
     }
 
-    // light
     commands.spawn((
         DirectionalLight {
             illuminance: 1000.0,
@@ -74,13 +74,43 @@ fn setup_level(mut commands: Commands) {
 
     commands.insert_resource::<DirectionalLightShadowMap>(DirectionalLightShadowMap { size: 4096 });
 
-    // camera
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(-2.5, 5.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
+        TargetTransform::new(Transform::from_xyz(-2.5, 5.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y)),
         Msaa::Sample8,
         ShadowFilteringMethod::Gaussian,
     ));
+}
+
+fn on_level_mesh_added(
+    trigger: Trigger<OnAdd, LevelMesh>,
+    query: Query<&LevelMesh>,
+    server: Res<AssetServer>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut commands: Commands,
+) {
+    let entity = trigger.entity();
+    let level_mesh = query.get(entity).unwrap();
+    let mesh_handle: Handle<Mesh> = server.load(level_mesh.clone().asset);
+
+    commands.entity(entity).insert((
+        Mesh3d(mesh_handle.clone()),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::WHITE,
+            metallic: 0.5,
+            perceptual_roughness: 0.5,
+            ..default()
+        })),
+    ));
+}
+
+fn on_connected(_trigger: Trigger<OnAdd, Session>, mut game_state: ResMut<NextState<GameState>>) {
+    game_state.set(GameState::Playing);
+}
+
+fn on_disconnected(_trigger: Trigger<Disconnected>, mut game_state: ResMut<NextState<GameState>>) {
+    game_state.set(GameState::None);
 }
 
 fn on_player_added(
@@ -118,34 +148,4 @@ fn on_player_added(
                 .insert((LocalPlayer, AccumulatedInputs::default()));
         }
     }
-}
-
-fn on_level_mesh_added(
-    trigger: Trigger<OnAdd, LevelMesh>,
-    query: Query<&LevelMesh>,
-    server: Res<AssetServer>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut commands: Commands,
-) {
-    let entity = trigger.entity();
-    let level_mesh = query.get(entity).unwrap();
-    let mesh_handle: Handle<Mesh> = server.load(level_mesh.clone().asset);
-
-    commands.entity(entity).insert((
-        Mesh3d(mesh_handle.clone()),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::WHITE,
-            metallic: 0.5,
-            perceptual_roughness: 0.5,
-            ..default()
-        })),
-    ));
-}
-
-fn on_connected(_trigger: Trigger<OnAdd, Session>, mut game_state: ResMut<NextState<GameState>>) {
-    game_state.set(GameState::Playing);
-}
-
-fn on_disconnected(_trigger: Trigger<Disconnected>, mut game_state: ResMut<NextState<GameState>>) {
-    game_state.set(GameState::None);
 }
