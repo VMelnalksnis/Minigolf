@@ -7,6 +7,7 @@ use {
     bevy::{app::App, math::Vec3, prelude::*},
     bevy_replicon::prelude::Replicated,
     minigolf::{LevelMesh, Player},
+    std::f32::consts::PI,
 };
 
 pub(crate) struct CoursePlugin;
@@ -120,57 +121,103 @@ fn setup_level(mut commands: Commands, server: Res<AssetServer>) {
         .set_parent(scene)
         .id();
 
-    let hole1_path = "Level2.glb#Mesh0/Primitive0";
+    let hole_path = "Level2.glb#Mesh1/Primitive0";
+    let hole_handle: Handle<Mesh> = server.load(hole_path);
 
-    for index in 1..3 {
-        let level_mesh_handle: Handle<Mesh> = server.load(hole1_path);
+    let hole_1 = commands
+        .spawn((
+            Name::new("Hole 1"),
+            Hole {
+                start_position: Vec3::new(0.0, 1.0, 0.0),
+            },
+            Transform::default(),
+            Replicated,
+            Mesh3d(hole_handle.clone()),
+            LevelMesh::from_path(hole_path),
+            RigidBody::Static,
+            ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
+            CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
+            Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
+            Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
+        ))
+        .set_parent(course)
+        .id();
 
-        let x_offset = (index - 1) as f32 * 10.0;
-        let start_position = Vec3::new(x_offset, 2.0, 0.0);
+    commands
+        .spawn((
+            Name::new("Hole 1 bounding box"),
+            Transform::from_xyz(0.8, 0.2, 0.8),
+            Sensor,
+            HoleBoundingBox::new(hole_1),
+            RigidBody::Static,
+            CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
+            Collider::cuboid(2.0, 2.0, 2.0),
+            CollidingEntities::default(),
+        ))
+        .set_parent(hole_1);
 
-        let hole = commands
-            .spawn((
-                Name::new(format!("Hole {}", index)),
-                LevelMesh::from_path(hole1_path),
-                Hole { start_position },
-                Replicated,
-                Transform::from_xyz(x_offset, 0.0, 0.0),
-                RigidBody::Static,
-                ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
-                Mesh3d(level_mesh_handle),
-                CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
-                Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
-                Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
-            ))
-            .set_parent(course)
-            .id();
+    commands
+        .spawn((
+            Name::new("Hole 1 sensor"),
+            Transform::from_xyz(1.2, -0.05, 1.2),
+            Sensor,
+            HoleSensor::new(hole_1),
+            RigidBody::Static,
+            CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
+            Collider::cuboid(0.2, 0.09, 0.2),
+            CollidingEntities::default(),
+        ))
+        .set_parent(hole_1);
 
-        commands
-            .spawn((
-                Name::new(format!("Hole {} sensor", index)),
-                Transform::from_xyz(1.6, -0.11, 0.0),
-                Sensor,
-                HoleSensor::new(hole),
-                RigidBody::Static,
-                CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-                Collider::cuboid(0.2, 0.19, 1.0),
-                CollidingEntities::default(),
-            ))
-            .set_parent(hole);
+    let hole_2 = commands
+        .spawn((
+            Name::new("Hole 2"),
+            Hole {
+                start_position: Vec3::new(1.2, 1.0, 2.0),
+            },
+            Transform::from_xyz(1.2, 0.0, 2.0).with_rotation(Quat::from_euler(
+                EulerRot::XYZ,
+                0.0,
+                PI * 1.5,
+                0.0,
+            )),
+            Replicated,
+            Mesh3d(hole_handle),
+            LevelMesh::from_path(hole_path),
+            RigidBody::Static,
+            ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
+            CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
+            Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
+            Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
+        ))
+        .set_parent(course)
+        .id();
 
-        commands
-            .spawn((
-                Name::new(format!("Hole {} bounding box", index)),
-                Transform::from_xyz(1.0, 0.0, 0.0),
-                Sensor,
-                HoleBoundingBox::new(hole),
-                RigidBody::Static,
-                CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-                Collider::cuboid(3.1, 2.1, 2.1),
-                CollidingEntities::default(),
-            ))
-            .set_parent(hole);
-    }
+    commands
+        .spawn((
+            Name::new("Hole 2 bounding box"),
+            Transform::from_xyz(0.8, 0.2, 0.8),
+            Sensor,
+            HoleBoundingBox::new(hole_2),
+            RigidBody::Static,
+            CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
+            Collider::cuboid(2.0, 2.0, 2.0),
+            CollidingEntities::default(),
+        ))
+        .set_parent(hole_2);
+
+    commands
+        .spawn((
+            Name::new("Hole 2 sensor"),
+            Transform::from_xyz(1.2, -0.05, 1.2),
+            Sensor,
+            HoleSensor::new(hole_2),
+            RigidBody::Static,
+            CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
+            Collider::cuboid(0.2, 0.09, 0.2),
+            CollidingEntities::default(),
+        ))
+        .set_parent(hole_2);
 }
 
 fn on_hole_added(
