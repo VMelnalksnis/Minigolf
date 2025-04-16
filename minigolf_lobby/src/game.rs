@@ -115,7 +115,7 @@ fn handle_messages(
                 GameClientPacket::GameCreated(lobby_id) => {
                     game_started_writer.send(GameStarted {
                         lobby_id,
-                        server: "ws://localhost:25566".into(),
+                        server: "https://localhost:25565".into(),
                     });
                 }
             }

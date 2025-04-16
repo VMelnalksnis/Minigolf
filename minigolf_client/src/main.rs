@@ -5,7 +5,7 @@ mod ui;
 use {
     crate::{
         input::{AccumulatedInputs, MinigolfInputPlugin, camera::TargetTransform},
-        network::ClientNetworkPlugin,
+        network::{Authentication, ClientNetworkPlugin},
         ui::ClientUiPlugin,
     },
     aeronet::io::{Session, connection::Disconnected},
@@ -120,7 +120,7 @@ fn on_player_added(
     mut commands: Commands,
     players: Query<(), With<LocalPlayer>>,
     all_players: Query<(Entity, &Player)>,
-    authentication: Res<ui::Authentication>,
+    authentication: Res<Authentication>,
 ) {
     let entity = trigger.entity();
     let player_mesh_handle: Handle<Mesh> = server.load("Player.glb#Mesh0/Primitive0");
