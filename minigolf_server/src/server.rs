@@ -64,6 +64,7 @@ pub fn main() -> AppExit {
         .add_plugins(CoursePlugin)
         .add_observer(on_disconnected)
         .insert_resource(Time::<Fixed>::from_hz(128.0))
+        .insert_resource(SubstepCount(24))
         .insert_resource::<DeactivationTime>(DeactivationTime(0.2))
         .insert_resource::<SleepingThreshold>(SleepingThreshold {
             angular: 1.0,
@@ -200,6 +201,7 @@ fn on_player_authenticated(
             Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
             AngularDamping(3.0),
             // SweptCcd::default(),
+            TransformInterpolation,
         ));
 
         commands
