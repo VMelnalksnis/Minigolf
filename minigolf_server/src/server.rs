@@ -9,7 +9,7 @@ use {
     avian3d::prelude::*,
     bevy::prelude::*,
     bevy_replicon::{prelude::*, server::increment_tick},
-    minigolf::{MinigolfPlugin, Player, PlayerInput},
+    minigolf::{MinigolfPlugin, Player, PlayerInput, PlayerPowerUps},
     std::net::{IpAddr, Ipv6Addr, SocketAddr},
 };
 
@@ -91,7 +91,7 @@ pub fn main() -> AppExit {
 #[derive(Event, Reflect, Debug)]
 pub(crate) struct ValidPlayerInput {
     pub(crate) player: Entity,
-    input: PlayerInput,
+    pub(crate) input: PlayerInput, // todo: need to handle different input types
 }
 
 #[derive(Component, Debug)]
@@ -103,7 +103,7 @@ pub(crate) struct LastPlayerPosition {
 fn recv_input(
     mut inputs: EventReader<FromClient<PlayerInput>>,
     mut sessions: Query<&PlayerSession>,
-    mut players: Query<&Player>,
+    mut players: Query<(&Player, &mut PlayerPowerUps)>,
     mut writer: EventWriter<ValidPlayerInput>,
 ) {
     for &FromClient {
@@ -119,13 +119,31 @@ fn recv_input(
             continue;
         };
 
-        let player = players.get_mut(session.player).unwrap();
-        if !player.can_move {
+        let (player, mut power_ups) = players.get_mut(session.player).unwrap();
+        if input.is_movement() && !player.can_move {
             warn!(
                 "Received player input from {:?} (player {:?}) when it cannot move",
                 client_entity, player
             );
             continue;
+        }
+
+        if let Some(power_up_type) = input.get_power_up_type() {
+            if !power_ups.get_power_ups().contains(&power_up_type) {
+                warn!(
+                    "Received player input with power up {:?} that the player {:?} does not have",
+                    power_up_type, player
+                );
+                continue;
+            }
+
+            if let None = power_ups.use_power_up(power_up_type) {
+                warn!(
+                    "Could not use power up from input {:?} for player {:?}",
+                    input, player
+                );
+                continue;
+            }
         }
 
         writer.send(ValidPlayerInput {
@@ -137,7 +155,11 @@ fn recv_input(
 
 fn move_player(mut reader: EventReader<ValidPlayerInput>, mut commands: Commands) {
     for &ValidPlayerInput { ref input, player } in reader.read() {
-        let force_vec = Vec3::new(input.movement.x, 0.0, input.movement.y).clamp_length_max(10.0);
+        let PlayerInput::Move(movement) = input else {
+            continue;
+        };
+
+        let force_vec = Vec3::new(movement.x, 0.0, movement.y).clamp_length_max(10.0);
 
         commands
             .entity(player)
@@ -147,6 +169,10 @@ fn move_player(mut reader: EventReader<ValidPlayerInput>, mut commands: Commands
 
 fn reset_can_move(mut reader: EventReader<ValidPlayerInput>, mut players: Query<&mut Player>) {
     for input in reader.read() {
+        let PlayerInput::Move(_) = input.input else {
+            continue;
+        };
+
         players.get_mut(input.player).unwrap().can_move = false;
     }
 }
@@ -185,23 +211,23 @@ fn on_player_authenticated(
         let initial_position = current_hole.hole.start_position;
 
         commands.entity(authenticated.player).insert((
-            PlayerInput::default(),
             LastPlayerPosition {
                 position: initial_position,
                 rotation: Quat::IDENTITY,
             },
             PlayerScore::default(),
+            PlayerPowerUps::default(),
             Replicated,
             RigidBody::Dynamic,
             Collider::sphere(0.021336),
             CollisionLayers::new(GameLayer::Player, [GameLayer::Default]),
             Mass::from(0.04593),
             Transform::from_translation(initial_position),
-            Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
+            Friction::new(0.8).with_dynamic_coefficient(0.2).with_combine_rule(CoefficientCombine::Multiply),
             Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
             AngularDamping(3.0),
-            // SweptCcd::default(),
-            TransformInterpolation,
+            SweptCcd::default(),
+            SpeculativeMargin(0.0),
         ));
 
         commands

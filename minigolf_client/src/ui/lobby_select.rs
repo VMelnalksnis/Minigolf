@@ -6,7 +6,7 @@ use {
     minigolf::lobby::{LobbyId, UserClientPacket},
 };
 
-// UI for creating/selecting a lobby
+/// UI for creating/selecting a lobby
 pub(crate) struct LobbySelectUiPlugin;
 
 impl Plugin for LobbySelectUiPlugin {

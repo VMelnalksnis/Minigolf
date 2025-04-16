@@ -12,10 +12,10 @@ use {
     bevy::{
         ecs::query::QuerySingleError,
         pbr::{DirectionalLightShadowMap, ShadowFilteringMethod},
-        prelude::*,
+        prelude::{AlphaMode::Blend, *},
         window::PrimaryWindow,
     },
-    minigolf::{GameState, LevelMesh, MinigolfPlugin, Player},
+    minigolf::{GameState, LevelMesh, MinigolfPlugin, Player, PowerUp},
     web_sys::{HtmlCanvasElement, wasm_bindgen::JsCast},
 };
 
@@ -34,6 +34,7 @@ fn main() -> AppExit {
         .add_observer(on_connected)
         .add_observer(on_player_added)
         .add_observer(on_level_mesh_added)
+        .add_observer(on_power_up_added)
         .add_observer(on_disconnected)
         .run()
 }
@@ -102,6 +103,33 @@ fn on_level_mesh_added(
             perceptual_roughness: 0.5,
             ..default()
         })),
+    ));
+}
+
+fn on_power_up_added(
+    trigger: Trigger<OnAdd, PowerUp>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut commands: Commands,
+) {
+    let entity = trigger.entity();
+
+    commands.entity(entity).insert((
+        Mesh3d(meshes.add(Sphere::new(0.1))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::srgba(0.3, 0.3, 0.7, 0.5),
+            alpha_mode: Blend,
+            emissive: LinearRgba::BLUE,
+            ..default()
+        })),
+        PointLight {
+            intensity: 2000.0,
+            range: 20.0,
+            color: Color::srgb(0.3, 0.3, 0.7),
+            radius: 0.1,
+            shadows_enabled: true,
+            ..default()
+        },
     ));
 }
 

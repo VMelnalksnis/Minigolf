@@ -107,9 +107,7 @@ fn on_pointer_up(
         return;
     }
 
-    writer.send(PlayerInput {
-        movement: input.input,
-    });
+    writer.send(PlayerInput::Move(input.input));
 
     input_target.set(InputTarget::None);
     input.input = Vec2::ZERO;
@@ -209,9 +207,7 @@ fn handle_touch(
                     continue;
                 }
 
-                writer.send(PlayerInput {
-                    movement: input.input,
-                });
+                writer.send(PlayerInput::Move(input.input));
 
                 input.input = Vec2::ZERO;
                 state.start = None;

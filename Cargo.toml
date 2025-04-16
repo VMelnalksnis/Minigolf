@@ -28,6 +28,7 @@ clap = "4.5.32"
 
 web-sys = { version = "0.3.77", default-features = false }
 uuid = { version = "1.12.1", default-features = false }
+rand = { version = "0.9.1", default-features = false }
 
 [patch.crates-io]
 wtransport = { git = "https://github.com/BiagioFesta/wtransport" }

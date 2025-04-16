@@ -18,8 +18,9 @@ aeronet = { workspace = true }
 aeronet_websocket = { workspace = true, features = ["server", "client"] }
 aeronet_webtransport = { workspace = true, features = ["server"] }
 
-bevy_replicon = { workspace = true, features = ["server"] }
+bevy_replicon = { workspace = true, features = ["server", "parent_sync"] }
 aeronet_replicon = { workspace = true, features = ["server"] }
+rand = { workspace = true }
 
 [features]
 ui = ["dep:bevy-inspector-egui", "dep:iyes_perf_ui"]

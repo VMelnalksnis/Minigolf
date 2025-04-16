@@ -2,11 +2,12 @@ mod dev;
 mod lobby;
 mod lobby_select;
 pub(crate) mod lobby_server;
+mod power_ups;
 
 use {
     crate::ui::{
         dev::DebugUiPlugin, lobby::LobbyUiPlugin, lobby_select::LobbySelectUiPlugin,
-        lobby_server::LobbyServerUiPlugin,
+        lobby_server::LobbyServerUiPlugin, power_ups::PowerUpUiPlugin,
     },
     bevy::prelude::*,
     bevy_egui::EguiPlugin,
@@ -19,7 +20,12 @@ impl Plugin for ClientUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(EguiPlugin);
         app.add_plugins(DebugUiPlugin);
-        app.add_plugins((LobbyServerUiPlugin, LobbySelectUiPlugin, LobbyUiPlugin));
+        app.add_plugins((
+            LobbyServerUiPlugin,
+            LobbySelectUiPlugin,
+            LobbyUiPlugin,
+            PowerUpUiPlugin,
+        ));
 
         app.init_state::<ServerState>();
     }

@@ -17,6 +17,6 @@ aeronet = { workspace = true, features = [] }
 aeronet_websocket = { workspace = true, features = ["client"] }
 aeronet_webtransport = { workspace = true, features = ["client", "dangerous-configuration"] }
 
-bevy_replicon = { workspace = true, features = ["client"] }
+bevy_replicon = { workspace = true, features = ["client", "parent_sync"] }
 aeronet_replicon = { workspace = true, features = ["client"] }
 web-sys = { workspace = true, features = ["Window", "Document", "Element", "HtmlCanvasElement", "CssStyleDeclaration"] }

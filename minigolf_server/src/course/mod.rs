@@ -1,37 +1,47 @@
+mod power_ups;
+
 use {
     crate::{
         ServerState,
-        server::{GameLayer, ValidPlayerInput},
+        course::power_ups::{PowerUpPlugin, StickyBall},
+        server::{GameLayer, LastPlayerPosition, ValidPlayerInput},
     },
     avian3d::prelude::*,
     bevy::{app::App, math::Vec3, prelude::*},
-    bevy_replicon::prelude::Replicated,
-    minigolf::{LevelMesh, Player},
-    std::f32::consts::PI,
+    bevy_replicon::prelude::*,
+    minigolf::{LevelMesh, Player, PlayerInput, PowerUp, PowerUpType},
+    rand::Rng,
 };
 
 pub(crate) struct CoursePlugin;
 
 impl Plugin for CoursePlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(PowerUpPlugin);
+
         app.register_type::<Course>()
             .register_type::<Hole>()
             .register_type::<HoleSensor>()
             .register_type::<HoleBoundingBox>()
+            .register_type::<HoleWalls>()
             .register_type::<PlayerScore>();
 
         app.add_event::<CourseCompleted>();
 
         app.add_observer(on_hole_added);
 
-        app.add_systems(OnEnter(ServerState::WaitingForPlayers), setup_level);
+        app.add_systems(OnEnter(ServerState::WaitingForPlayers), setup_course);
         app.add_systems(OnExit(ServerState::Playing), despawn_level);
 
-        app.configure_sets(Update, PlayingSet.run_if(in_state(ServerState::Playing)))
-            .configure_sets(
-                FixedUpdate,
-                PlayingSet.run_if(in_state(ServerState::Playing)),
-            );
+        app.configure_sets(Update, PlayingSet.run_if(in_state(ServerState::Playing)));
+        app.configure_sets(
+            FixedUpdate,
+            PlayingSet.run_if(in_state(ServerState::Playing)),
+        );
+        app.configure_sets(
+            PostProcessCollisions,
+            PlayingSet.run_if(in_state(ServerState::Playing)),
+        );
 
         app.add_systems(
             Update,
@@ -91,6 +101,11 @@ impl HoleBoundingBox {
     }
 }
 
+#[derive(Component, Reflect, Debug)]
+struct HoleWalls {
+    hole_entity: Entity,
+}
+
 #[derive(Component, Reflect, Default, Debug)]
 pub(crate) struct PlayerScore {
     score: u32,
@@ -99,16 +114,21 @@ pub(crate) struct PlayerScore {
 #[derive(Resource)]
 pub(crate) struct CurrentHole {
     pub(crate) hole: Hole,
-    entity: Entity,
+    hole_entity: Entity,
     pub(crate) players: Vec<Player>,
 }
 
 #[derive(SystemSet, Clone, PartialEq, Eq, Hash, Debug)]
-struct PlayingSet;
+pub(crate) struct PlayingSet;
 
-fn setup_level(mut commands: Commands, server: Res<AssetServer>) {
+fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
     let scene = commands
-        .spawn((Name::new("Scene"), SceneRoot::default()))
+        .spawn((
+            Name::new("Scene"),
+            SceneRoot::default(),
+            Replicated,
+            ParentSync::default(),
+        ))
         .id();
 
     let course = commands
@@ -117,107 +137,131 @@ fn setup_level(mut commands: Commands, server: Res<AssetServer>) {
             Course::new(),
             Transform::default(),
             Visibility::default(),
+            Replicated,
+            ParentSync::default(),
         ))
         .set_parent(scene)
         .id();
 
-    let hole_path = "Level2.glb#Mesh1/Primitive0";
-    let hole_handle: Handle<Mesh> = server.load(hole_path);
+    let floor_path = "Course1.glb#Mesh4/Primitive0";
+    let floor_handle: Handle<Mesh> = server.load(floor_path);
 
-    let hole_1 = commands
-        .spawn((
-            Name::new("Hole 1"),
-            Hole {
-                start_position: Vec3::new(0.0, 1.0, 0.0),
-            },
-            Transform::default(),
-            Replicated,
-            Mesh3d(hole_handle.clone()),
-            LevelMesh::from_path(hole_path),
-            RigidBody::Static,
-            ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
-            CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
-            Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
-            Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
-        ))
-        .set_parent(course)
-        .id();
+    let walls_path = "Course1.glb#Mesh3/Primitive0";
+    let walls_handle: Handle<Mesh> = server.load(walls_path);
 
-    commands
-        .spawn((
-            Name::new("Hole 1 bounding box"),
-            Transform::from_xyz(0.8, 0.2, 0.8),
-            Sensor,
-            HoleBoundingBox::new(hole_1),
-            RigidBody::Static,
-            CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-            Collider::cuboid(2.0, 2.0, 2.0),
-            CollidingEntities::default(),
-        ))
-        .set_parent(hole_1);
+    for index in 0..2 {
+        let offset = 2.4;
+        let x_offset = offset + index as f32 * 4.0;
 
-    commands
-        .spawn((
-            Name::new("Hole 1 sensor"),
-            Transform::from_xyz(1.2, -0.05, 1.2),
-            Sensor,
-            HoleSensor::new(hole_1),
-            RigidBody::Static,
-            CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-            Collider::cuboid(0.2, 0.09, 0.2),
-            CollidingEntities::default(),
-        ))
-        .set_parent(hole_1);
+        let hole = commands
+            .spawn((
+                Name::new(format!("Hole {index}")),
+                Hole {
+                    start_position: Vec3::new(x_offset, 0.5, 0.0),
+                },
+                Transform::from_xyz(x_offset + offset, 0.0, 0.0),
+                Replicated,
+                ParentSync::default(),
+                Mesh3d(floor_handle.clone()),
+                LevelMesh::from_path(floor_path),
+                RigidBody::Static,
+                ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
+                CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
+                Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
+                Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
+            ))
+            .set_parent(course)
+            .id();
 
-    let hole_2 = commands
-        .spawn((
-            Name::new("Hole 2"),
-            Hole {
-                start_position: Vec3::new(1.2, 1.0, 2.0),
-            },
-            Transform::from_xyz(1.2, 0.0, 2.0).with_rotation(Quat::from_euler(
-                EulerRot::XYZ,
+        commands
+            .spawn((
+                Name::new(format!("Hole {index} walls")),
+                Transform::from_xyz(-offset, 0.0, 0.0),
+                HoleWalls { hole_entity: hole },
+                Replicated,
+                ParentSync::default(),
+                Mesh3d(walls_handle.clone()),
+                LevelMesh::from_path(walls_path),
+                RigidBody::Static,
+                ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
+                CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
+                Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
+                Restitution::new(1.0).with_combine_rule(CoefficientCombine::Max),
+            ))
+            .set_parent(hole);
+
+        commands
+            .spawn((
+                Name::new(format!("Hole {index} bounding box")),
+                Transform::from_xyz(-offset + 1.0, 0.2, 0.0),
+                Sensor,
+                HoleBoundingBox::new(hole),
+                RigidBody::Static,
+                CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
+                Collider::cuboid(4.0, 2.0, 3.0),
+                CollidingEntities::default(),
+            ))
+            .set_parent(hole);
+
+        commands
+            .spawn((
+                Name::new(format!("Hole {index} sensor")),
+                Transform::from_xyz(-offset + 2.4, -0.05, 0.0),
+                Sensor,
+                HoleSensor::new(hole),
+                RigidBody::Static,
+                CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
+                Collider::cuboid(0.2, 0.09, 0.2),
+                CollidingEntities::default(),
+            ))
+            .set_parent(hole);
+
+        commands
+            .spawn(power_up_bundle(Transform::from_xyz(
+                -offset + 1.2,
+                0.15,
                 0.0,
-                PI * 1.5,
-                0.0,
-            )),
-            Replicated,
-            Mesh3d(hole_handle),
-            LevelMesh::from_path(hole_path),
-            RigidBody::Static,
-            ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
-            CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
-            Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
-            Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
-        ))
-        .set_parent(course)
-        .id();
+            )))
+            .set_parent(hole);
 
-    commands
-        .spawn((
-            Name::new("Hole 2 bounding box"),
-            Transform::from_xyz(0.8, 0.2, 0.8),
-            Sensor,
-            HoleBoundingBox::new(hole_2),
-            RigidBody::Static,
-            CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-            Collider::cuboid(2.0, 2.0, 2.0),
-            CollidingEntities::default(),
-        ))
-        .set_parent(hole_2);
+        commands
+            .spawn(power_up_bundle(Transform::from_xyz(
+                -offset + 1.2,
+                0.05,
+                0.8,
+            )))
+            .set_parent(hole);
 
-    commands
-        .spawn((
-            Name::new("Hole 2 sensor"),
-            Transform::from_xyz(1.2, -0.05, 1.2),
-            Sensor,
-            HoleSensor::new(hole_2),
-            RigidBody::Static,
-            CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-            Collider::cuboid(0.2, 0.09, 0.2),
-            CollidingEntities::default(),
-        ))
-        .set_parent(hole_2);
+        commands
+            .spawn(power_up_bundle(Transform::from_xyz(
+                -offset + 0.0,
+                0.05,
+                0.8,
+            )))
+            .set_parent(hole);
+
+        commands
+            .spawn(power_up_bundle(Transform::from_xyz(
+                -offset + 0.0,
+                0.05,
+                -0.8,
+            )))
+            .set_parent(hole);
+    }
+}
+
+fn power_up_bundle(transform: Transform) -> impl Bundle {
+    (
+        Name::new("Power up"),
+        transform,
+        Sensor,
+        RigidBody::Static,
+        CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
+        Collider::sphere(0.1),
+        CollidingEntities::default(),
+        PowerUp::from(rand::rng().random::<PowerUpType>()),
+        Replicated,
+    )
 }
 
 fn on_hole_added(
@@ -234,7 +278,7 @@ fn on_hole_added(
         let hole = hole.get(hole_entity).unwrap();
         commands.insert_resource::<CurrentHole>(CurrentHole {
             hole: *hole,
-            entity: hole_entity,
+            hole_entity,
             players: vec![],
         });
     }
@@ -242,6 +286,10 @@ fn on_hole_added(
 
 fn increment_score(mut reader: EventReader<ValidPlayerInput>, mut scores: Query<&mut PlayerScore>) {
     for input in reader.read() {
+        let PlayerInput::Move(_) = input.input else {
+            continue;
+        };
+
         let Ok(mut score) = scores.get_mut(input.player) else {
             warn!("Received {:?} without player score component", input);
             continue;
@@ -283,14 +331,14 @@ fn handle_hole_bounding_box(
             &mut Transform,
             &mut LinearVelocity,
             &mut AngularVelocity,
-            &crate::server::LastPlayerPosition,
+            &LastPlayerPosition,
         ),
         With<Player>,
     >,
     current_hole: Res<CurrentHole>,
 ) {
     for (bounds_entity, bounding_box, colliding_entities) in bounds.iter() {
-        if current_hole.entity != bounding_box.hole {
+        if current_hole.hole_entity != bounding_box.hole {
             continue;
         }
 
@@ -312,9 +360,10 @@ fn handle_hole_bounding_box(
                 angular.0 = Vec3::ZERO;
 
                 info!("Last position: {last:?}");
+                // todo: ball rolls off the edge when last position set close to it, even though it was stable before respawning
+                // might have to calculate some safety margin in order to avoid issues after respawn
                 transform.translation = last.position;
                 transform.rotation = last.rotation;
-                info!("{transform:?}");
             }
         }
     }
@@ -322,10 +371,11 @@ fn handle_hole_bounding_box(
 
 fn current_hole_modified(
     mut current_hole: ResMut<CurrentHole>,
-    mut players: Query<&mut Transform, With<Player>>,
+    mut players: Query<(Entity, &mut LastPlayerPosition, &mut Transform), With<Player>>,
     course: Query<&Course>,
     holes: Query<&Hole>,
     mut writer: EventWriter<CourseCompleted>,
+    mut commands: Commands,
 ) {
     if !current_hole.is_changed() {
         return;
@@ -349,13 +399,13 @@ fn current_hole_modified(
     let course = course.single();
     info!(
         "Course {:?}, current hole {:?}",
-        course, current_hole.entity
+        course, current_hole.hole_entity
     );
 
     let remaining_holes = course
         .holes
         .iter()
-        .skip_while(|h| !current_hole.entity.eq(*h))
+        .skip_while(|h| !current_hole.hole_entity.eq(*h))
         .skip(1)
         .collect::<Vec<_>>();
 
@@ -367,11 +417,20 @@ fn current_hole_modified(
     };
 
     let c = *holes.get(**next_hole).unwrap();
-    current_hole.entity = **next_hole;
+    current_hole.hole_entity = **next_hole;
     current_hole.hole = c;
 
-    for mut transform in &mut players {
+    for (player, mut last_position, mut transform) in &mut players {
+        transform.scale = Vec3::splat(1.0);
         transform.translation = c.start_position;
+
+        last_position.position = c.start_position;
+        last_position.rotation = Quat::IDENTITY;
+
+        commands
+            .entity(player)
+            .insert(ExternalForce::ZERO.with_persistence(false)) // todo: is this needed?
+            .remove::<StickyBall>();
     }
 }
 
