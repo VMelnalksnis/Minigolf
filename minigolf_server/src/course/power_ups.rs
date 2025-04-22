@@ -17,12 +17,12 @@ impl Plugin for PowerUpPlugin {
         app.register_type::<StickyBall>();
 
         app.add_systems(Update, apply_power_ups.in_set(PlayingSet));
-        app.add_systems(PostProcessCollisions, apply_sticky.in_set(PlayingSet));
 
         app.add_systems(
             FixedUpdate,
             (
                 handle_power_up_sensors,
+                apply_sticky,
                 apply_hole_magnet,
                 remove_hole_magnet,
             )
@@ -177,25 +177,27 @@ struct StickyWalls;
 pub(crate) struct StickyBall;
 
 fn apply_sticky(
-    mut reader: EventReader<Collision>,
+    collisions: Collisions,
     walls: Query<Entity, With<HoleWalls>>,
     sticky_walls: Query<(), (With<HoleWalls>, With<StickyWalls>)>,
-    players: Query<Entity, With<Player>>,
+    players: Query<(Entity, &Player)>,
     sticky_players: Query<(), (With<Player>, With<StickyBall>)>,
     mut velocities: Query<(&mut LinearVelocity, &mut AngularVelocity)>,
 ) {
     let walls = walls.iter().collect::<Vec<_>>();
-    let players = players.iter().collect::<Vec<_>>();
 
-    for Collision(contacts) in reader
-        .read()
-        .filter(|c| !c.0.is_sensor && !(c.0.during_current_frame && c.0.during_previous_frame))
+    for contact_pair in collisions
+        .iter()
+        .filter(|c| !c.is_sensor()) // todo: broken in latest avian version
     {
-        let Some(player_entity) = find_entity(&players, contacts) else {
+        let Some(player_entity) = find_entity(
+            &players.iter().map(|(e, _)| e).collect::<Vec<_>>(),
+            contact_pair,
+        ) else {
             continue;
         };
 
-        let Some(walls_entity) = find_entity(&walls, contacts) else {
+        let Some(walls_entity) = find_entity(&walls, contact_pair) else {
             continue;
         };
 
@@ -203,9 +205,17 @@ fn apply_sticky(
             continue;
         }
 
+        let Ok((_, player)) = players.get(player_entity) else {
+            continue;
+        };
+
+        if player.can_move {
+            continue;
+        }
+
         info!(
             "Applying sticky effect for player {:?}, walls {:?} with contacts {:?}",
-            player_entity, walls_entity, contacts
+            player_entity, walls_entity, contact_pair
         );
 
         let (mut linear, mut angular) = velocities.get_mut(player_entity).unwrap();
@@ -214,7 +224,7 @@ fn apply_sticky(
     }
 }
 
-fn find_entity(entities: &Vec<Entity>, contacts: &Contacts) -> Option<Entity> {
+fn find_entity(entities: &Vec<Entity>, contacts: &ContactPair) -> Option<Entity> {
     if entities.contains(&contacts.entity1) {
         Some(contacts.entity1)
     } else if entities.contains(&contacts.entity2) {

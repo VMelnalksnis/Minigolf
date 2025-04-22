@@ -40,7 +40,7 @@ fn lobby_ui(
             if ui.button("Start game").clicked() {
                 info!("Starting game");
 
-                let mut session = lobby_session.single_mut();
+                let mut session = lobby_session.single_mut().unwrap();
                 let request: String = UserClientPacket::StartGame.into();
                 session.send.push(Bytes::from(request));
             }
@@ -48,7 +48,7 @@ fn lobby_ui(
             if ui.button("Leave lobby").clicked() {
                 info!("Leaving lobby");
 
-                let mut session = lobby_session.single_mut();
+                let mut session = lobby_session.single_mut().unwrap();
                 let request: String = UserClientPacket::LeaveLobby.into();
                 session.send.push(Bytes::from(request));
                 state.set(ServerState::Lobbies);

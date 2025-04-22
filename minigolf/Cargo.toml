@@ -6,7 +6,7 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
-bevy = { workspace = true }
+bevy = { workspace = true, features = ["serialize"] }
 bevy_replicon = { workspace = true }
 
 serde = { workspace = true }

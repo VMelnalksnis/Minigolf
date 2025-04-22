@@ -56,7 +56,7 @@ fn on_opened(
     addresses: Query<&LocalAddr>,
     games: Query<&GamerServerListener>,
 ) {
-    let server = trigger.entity();
+    let server = trigger.target();
     let local_addr = addresses
         .get(server)
         .expect("opened server should have a binding socket `LocalAddr`");
@@ -68,15 +68,15 @@ fn on_opened(
 
 fn on_connected(
     trigger: Trigger<OnAdd, Session>,
-    servers: Query<&Parent>,
+    servers: Query<&ChildOf>,
     games: Query<&GamerServerListener>,
     mut commands: Commands,
 ) {
-    let client = trigger.entity();
+    let client = trigger.target();
     let server = servers
         .get(client)
         .expect("connected session should have a server")
-        .get();
+        .parent();
 
     if let Ok(_) = games.get(server) {
         info!("Game server {client} connected to {server}");
@@ -113,9 +113,9 @@ fn handle_messages(
                 }
 
                 GameClientPacket::GameCreated(lobby_id) => {
-                    game_started_writer.send(GameStarted {
+                    game_started_writer.write(GameStarted {
                         lobby_id,
-                        server: "https://localhost:25565".into(),
+                        server: "ws://localhost:25566".into(),
                     });
                 }
             }
@@ -131,7 +131,7 @@ fn handle_messages(
 }
 
 fn on_game_server_added(trigger: Trigger<OnAdd, GameServer>, servers: Query<&GameServer>) {
-    let entity = trigger.entity();
+    let entity = trigger.target();
     let connected_server = servers.get(entity).unwrap();
     info!("Added new game server {connected_server:?}");
 

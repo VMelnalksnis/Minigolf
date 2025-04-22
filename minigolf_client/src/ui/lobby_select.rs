@@ -44,7 +44,7 @@ fn lobbies_ui(
 
                 info!("Joining lobby {}", lobbies_ui.lobby_id);
 
-                let mut session = lobby_session.single_mut();
+                let mut session = lobby_session.single_mut().unwrap();
                 let request: String = UserClientPacket::JoinLobby(id).into();
                 session.send.push(Bytes::from(request));
             }
@@ -53,7 +53,7 @@ fn lobbies_ui(
             if ui.button("Create lobby").clicked() {
                 info!("Creating lobby");
 
-                let mut session = lobby_session.single_mut();
+                let mut session = lobby_session.single_mut().unwrap();
                 let request: String = UserClientPacket::CreateLobby.into();
                 session.send.push(Bytes::from(request));
             }

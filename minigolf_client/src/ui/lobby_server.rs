@@ -82,7 +82,7 @@ fn on_connected_to_lobby_server(
     lobby_servers: Query<(&Session, &Name), With<LobbyServerSession>>,
     mut next_state: ResMut<NextState<ServerState>>,
 ) {
-    let entity = trigger.entity();
+    let entity = trigger.target();
     let Ok((_session, name)) = lobby_servers.get(entity) else {
         return;
     };

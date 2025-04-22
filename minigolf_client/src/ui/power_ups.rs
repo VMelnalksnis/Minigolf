@@ -27,7 +27,7 @@ fn power_up_ui(
     player: Query<&PlayerPowerUps, With<LocalPlayer>>,
     mut writer: EventWriter<PlayerInput>,
 ) {
-    let Ok(power_ups) = player.get_single() else {
+    let Ok(power_ups) = player.single() else {
         return;
     };
 
@@ -42,23 +42,23 @@ fn power_up_ui(
 
                         match power_up_type {
                             PowerUpType::HoleMagnet => {
-                                writer.send(PlayerInput::HoleMagnet);
+                                writer.write(PlayerInput::HoleMagnet);
                             }
                             
                             PowerUpType::StickyBall => {
-                                writer.send(PlayerInput::StickyBall);
+                                writer.write(PlayerInput::StickyBall);
                             }
 
                             PowerUpType::Wind => {
-                                writer.send(PlayerInput::Wind(Vec2::new(1.0, 1.0))); // todo
+                                writer.write(PlayerInput::Wind(Vec2::new(1.0, 1.0))); // todo
                             }
 
                             PowerUpType::StickyWalls => {
-                                writer.send(PlayerInput::StickyWalls);
+                                writer.write(PlayerInput::StickyWalls);
                             }
 
                             PowerUpType::IceRink => {
-                                writer.send(PlayerInput::IceRink);
+                                writer.write(PlayerInput::IceRink);
                             }
 
                             _ => {}

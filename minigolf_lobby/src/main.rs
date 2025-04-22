@@ -66,7 +66,7 @@ fn on_lobby_member_removed(
     lobby: Query<(Entity, &LobbyMember), With<Lobby>>,
     mut commands: Commands,
 ) {
-    let entity = trigger.entity();
+    let entity = trigger.target();
     let Ok((_, lobby_member)) = members.get(entity) else {
         return;
     };

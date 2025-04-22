@@ -70,12 +70,18 @@ enum InputTarget {
 }
 
 fn on_pointer_down(
-    trigger: Trigger<Pointer<Down>>,
-    players: Query<(), With<LocalPlayer>>,
+    trigger: Trigger<Pointer<Pressed>>,
+    players: Query<Entity, With<LocalPlayer>>,
     input_state: Res<State<InputState>>,
     mut input_target: ResMut<NextState<InputTarget>>,
 ) {
-    match players.get(trigger.entity()) {
+    // After upgrading to 0.16, this is triggered multiple times
+    // At least it is triggered in a consistent order, with the first one being the top-most entity
+    if let NextState::Pending(_) = input_target.as_ref() {
+        return;
+    }
+
+    match players.get(trigger.target()) {
         Ok(_) => match input_state.get() {
             InputState::CanMove => input_target.set(InputTarget::Movement),
             InputState::CannotMove => input_target.set(InputTarget::Camera),
@@ -85,7 +91,7 @@ fn on_pointer_down(
 }
 
 fn on_pointer_up(
-    _trigger: Trigger<Pointer<Up>>,
+    _trigger: Trigger<Pointer<Released>>,
     input_state: Res<State<InputState>>,
     mut writer: EventWriter<PlayerInput>,
     mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>,
@@ -96,7 +102,7 @@ fn on_pointer_up(
         return;
     }
 
-    let Ok(mut input) = inputs.get_single_mut() else {
+    let Ok(mut input) = inputs.single_mut() else {
         error!("Multiple entities with accumulated inputs/local player marker ");
         input_target.set(InputTarget::None);
         return;
@@ -107,7 +113,7 @@ fn on_pointer_up(
         return;
     }
 
-    writer.send(PlayerInput::Move(input.input));
+    writer.write(PlayerInput::Move(input.input));
 
     input_target.set(InputTarget::None);
     input.input = Vec2::ZERO;
@@ -120,7 +126,7 @@ fn check_whether_can_move(
     query: Query<&Player, (Changed<Player>, With<LocalPlayer>)>,
     mut input_state: ResMut<NextState<InputState>>,
 ) {
-    let Ok(player) = query.get_single() else {
+    let Ok(player) = query.single() else {
         return;
     };
 
@@ -145,7 +151,7 @@ fn accumulate_mouse_movement(
     mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>,
 ) {
     for ev in mouse_motion_events.read() {
-        let Ok(mut input) = inputs.get_single_mut() else {
+        let Ok(mut input) = inputs.single_mut() else {
             continue;
         };
 
@@ -157,7 +163,7 @@ fn accumulate_mouse_movement(
 }
 
 fn reset_inputs(mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>) {
-    let Ok(mut input) = inputs.get_single_mut() else {
+    let Ok(mut input) = inputs.single_mut() else {
         error!("Multiple entities with accumulated inputs/local player marker ");
         return;
     };
@@ -178,7 +184,7 @@ fn handle_touch(
     mut writer: EventWriter<PlayerInput>,
 ) {
     for touch in touch_inputs.read() {
-        let Ok(mut input) = inputs.get_single_mut() else {
+        let Ok(mut input) = inputs.single_mut() else {
             continue;
         };
 
@@ -207,7 +213,7 @@ fn handle_touch(
                     continue;
                 }
 
-                writer.send(PlayerInput::Move(input.input));
+                writer.write(PlayerInput::Move(input.input));
 
                 input.input = Vec2::ZERO;
                 state.start = None;
@@ -226,11 +232,11 @@ fn draw_accumulated_inputs(
     input_q: Query<&AccumulatedInputs>,
     mut gizmos: Gizmos,
 ) {
-    let Ok(input) = input_q.get_single() else {
+    let Ok(input) = input_q.single() else {
         return;
     };
 
-    let Ok(player_transform) = player_q.get_single() else {
+    let Ok(player_transform) = player_q.single() else {
         return;
     };
 

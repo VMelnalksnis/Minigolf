@@ -18,7 +18,9 @@ pub(crate) struct ClientUiPlugin;
 
 impl Plugin for ClientUiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(EguiPlugin);
+        app.add_plugins(EguiPlugin {
+            enable_multipass_for_primary_context: false,
+        });
         app.add_plugins(DebugUiPlugin);
         app.add_plugins((
             LobbyServerUiPlugin,
@@ -28,6 +30,10 @@ impl Plugin for ClientUiPlugin {
         ));
 
         app.init_state::<ServerState>();
+        app.insert_resource::<MeshPickingSettings>(MeshPickingSettings {
+            require_markers: true,
+            ..default()
+        });
     }
 }
 

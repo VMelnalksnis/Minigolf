@@ -5,7 +5,7 @@ use {
         io::connection::Disconnect,
         io::{
             Session,
-            connection::{DisconnectReason, Disconnected, LocalAddr},
+            connection::{Disconnected, LocalAddr},
             server::Server,
         },
         transport::AeronetTransportPlugin,
@@ -194,7 +194,7 @@ fn lobby_connection_messages(
     servers: Query<&LocalAddr, With<WebSocketServer>>,
     mut server_state: ResMut<NextState<ServerState>>,
 ) {
-    let Ok(mut session) = sessions.get_single_mut() else {
+    let Ok(mut session) = sessions.single_mut() else {
         return;
     };
 
@@ -206,7 +206,7 @@ fn lobby_connection_messages(
 
         match server_packet {
             GameServerPacket::Hello => {
-                let server_address = servers.get_single().unwrap().0;
+                let server_address = servers.single().unwrap().0;
                 let response: String = GameClientPacket::Available(server_address).into();
                 session.send.push(Bytes::from_owner(response));
                 server_state.set(ServerState::WaitingForGame);
@@ -221,12 +221,12 @@ fn on_lobby_disconnected(
     trigger: Trigger<Disconnected>,
     mut connector: ResMut<LobbyServerConnector>,
 ) {
-    match &trigger.reason {
-        DisconnectReason::User(reason) => {
+    match trigger.event() {
+        Disconnected::ByUser(reason) => {
             panic!("Disconnected from lobby server by user; {}", reason)
         }
-        DisconnectReason::Peer(_) => connector.retry(),
-        DisconnectReason::Error(_) => connector.retry(),
+        Disconnected::ByPeer(_) => connector.retry(),
+        Disconnected::ByError(_) => connector.retry(),
     }
 }
 
@@ -264,7 +264,7 @@ fn game_setup_messages(
     mut server_state: ResMut<NextState<ServerState>>,
     mut commands: Commands,
 ) {
-    let Ok(mut session) = sessions.get_single_mut() else {
+    let Ok(mut session) = sessions.single_mut() else {
         return;
     };
 
@@ -315,19 +315,19 @@ fn setup_waiting_for_players(
     ));
 
     let lobby_id = lobby_members.iter().next().unwrap().lobby_id;
-    let mut lobby_session = sessions.single_mut();
+    let mut lobby_session = sessions.single_mut().unwrap();
     let message: String = GameClientPacket::GameCreated(lobby_id).into();
     lobby_session.send.push(Bytes::from_owner(message));
 }
 
 fn on_connected_while_waiting(
     trigger: Trigger<OnAdd, Session>,
-    parent: Query<&Parent>,
+    parent: Query<&ChildOf>,
     sessions: Query<Entity, (With<Session>, Without<PlayerCredentials>)>,
     mut writer: EventWriter<ToClients<RequestAuthentication>>,
     mut commands: Commands,
 ) {
-    let client = trigger.entity();
+    let client = trigger.target();
     let Ok(_) = parent.get(client) else {
         warn!(
             "{:?} connected without parent while waiting for players",
@@ -342,7 +342,7 @@ fn on_connected_while_waiting(
     let x = sessions.iter().collect::<Vec<_>>();
     info!("{:?} sessions", x);
 
-    writer.send(ToClients {
+    writer.write(ToClients {
         mode: SendMode::Direct(client),
         event: RequestAuthentication,
     });
@@ -383,7 +383,7 @@ fn player_authentication_handler(
 
         info!("User {:?} authenticated", player_entity);
 
-        writer.send(PlayerAuthenticated {
+        writer.write(PlayerAuthenticated {
             player: player_entity,
             session: session_entity,
         });
@@ -413,16 +413,16 @@ pub(crate) struct PlayerAuthenticated {
 // logging
 
 fn on_opened(trigger: Trigger<OnAdd, Server>, servers: Query<&LocalAddr>) {
-    let server = trigger.entity();
+    let server = trigger.target();
     let local_addr = servers
         .get(server)
         .expect("opened server should have a binding socket `LocalAddr`");
     info!("{server} opened on {}", **local_addr);
 }
 
-fn on_session_request(mut request: Trigger<SessionRequest>, clients: Query<&Parent>) {
-    let client = request.entity();
-    let Ok(server) = clients.get(client).map(Parent::get) else {
+fn on_session_request(mut request: Trigger<SessionRequest>, clients: Query<&ChildOf>) {
+    let client = request.target();
+    let Ok(server) = clients.get(client).map(ChildOf::parent) else {
         return;
     };
 
@@ -436,13 +436,13 @@ fn on_session_request(mut request: Trigger<SessionRequest>, clients: Query<&Pare
 
 fn on_connected(
     trigger: Trigger<OnAdd, Session>,
-    servers: Query<&Parent>,
+    servers: Query<&ChildOf>,
     names: Query<&Name>,
     mut sessions: Query<&mut Session>,
 ) {
-    let client = trigger.entity();
+    let client = trigger.target();
 
-    if let Ok(server) = servers.get(client).map(Parent::get) {
+    if let Ok(server) = servers.get(client).map(ChildOf::parent) {
         info!("{client} connected to {server}");
     } else if let Ok(name) = names.get(client) {
         info!("Connected to {name}");
@@ -455,30 +455,30 @@ fn on_connected(
     };
 }
 
-fn on_disconnected(trigger: Trigger<Disconnected>, servers: Query<&Parent>, names: Query<&Name>) {
-    let client = trigger.entity();
+fn on_disconnected(trigger: Trigger<Disconnected>, servers: Query<&ChildOf>, names: Query<&Name>) {
+    let client = trigger.target();
 
-    if let Ok(server) = servers.get(client).map(Parent::get) {
-        match &trigger.reason {
-            DisconnectReason::User(reason) => {
+    if let Ok(server) = servers.get(client).map(ChildOf::parent) {
+        match trigger.event() {
+            Disconnected::ByUser(reason) => {
                 info!("{client} disconnected from {server} by user: {reason}");
             }
-            DisconnectReason::Peer(reason) => {
+            Disconnected::ByPeer(reason) => {
                 info!("{client} disconnected from {server} by peer: {reason}");
             }
-            DisconnectReason::Error(err) => {
+            Disconnected::ByError(err) => {
                 warn!("{client} disconnected from {server} due to error: {err:?}");
             }
         }
     } else if let Ok(name) = names.get(client) {
-        match &trigger.reason {
-            DisconnectReason::User(reason) => {
+        match trigger.event() {
+            Disconnected::ByUser(reason) => {
                 info!("Disconnected from {name} by user: {reason}");
             }
-            DisconnectReason::Peer(reason) => {
+            Disconnected::ByPeer(reason) => {
                 info!("Disconnected from {name} by peer: {reason}");
             }
-            DisconnectReason::Error(err) => {
+            Disconnected::ByError(err) => {
                 warn!("Disconnected from {name} due to error: {err:?}");
             }
         }

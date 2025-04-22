@@ -146,7 +146,7 @@ fn recv_input(
             }
         }
 
-        writer.send(ValidPlayerInput {
+        writer.write(ValidPlayerInput {
             player: session.player,
             input: input.clone(),
         });
@@ -243,7 +243,7 @@ fn on_disconnected(
     sessions: Query<&PlayerSession>,
     mut commands: Commands,
 ) {
-    let client = trigger.entity();
+    let client = trigger.target();
     info!("Disconnected {:?}", client);
     let Ok(session) = sessions.get(client) else {
         return;

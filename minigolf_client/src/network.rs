@@ -2,7 +2,7 @@ use {
     crate::ui::{ServerState, lobby_server::LobbyServerSession},
     aeronet::io::{
         Session, SessionEndpoint,
-        connection::{DisconnectReason, Disconnected},
+        connection::{Disconnected},
     },
     aeronet_replicon::client::{AeronetRepliconClient, AeronetRepliconClientPlugin},
     aeronet_websocket::client::{WebSocketClient, WebSocketClientPlugin},
@@ -104,7 +104,7 @@ pub(crate) fn connect_to_lobby_server(target: &str, mut commands: Commands) {
 }
 
 fn on_connecting(trigger: Trigger<OnAdd, SessionEndpoint>, names: Query<&Name>) {
-    let entity = trigger.entity();
+    let entity = trigger.target();
     let name = names
         .get(entity)
         .expect("our session entity should have a name");
@@ -113,19 +113,19 @@ fn on_connecting(trigger: Trigger<OnAdd, SessionEndpoint>, names: Query<&Name>) 
 }
 
 fn on_disconnected(trigger: Trigger<Disconnected>, names: Query<&Name>) {
-    let session = trigger.entity();
+    let session = trigger.target();
     let name = names
         .get(session)
         .expect("our session entity should have a name");
 
-    match &trigger.reason {
-        DisconnectReason::User(reason) => {
+    match trigger.event() {
+        Disconnected::ByUser(reason) => {
             info!("{name} disconnected by user: {reason}");
         }
-        DisconnectReason::Peer(reason) => {
+        Disconnected::ByPeer(reason) => {
             info!("{name} disconnected by peer: {reason}");
         }
-        DisconnectReason::Error(err) => {
+        Disconnected::ByError(err) => {
             info!("{name} disconnected due to error: {err:?}");
         }
     };
@@ -136,7 +136,7 @@ fn handle_lobby_server_packets(
     mut server_state: ResMut<NextState<ServerState>>,
     mut commands: Commands,
 ) {
-    let Ok(mut lobby_session) = sessions.get_single_mut() else {
+    let Ok(mut lobby_session) = sessions.single_mut() else {
         return;
     };
 
@@ -158,13 +158,17 @@ fn handle_lobby_server_packets(
             UserServerPacket::GameStarted(server) => {
                 server_state.set(ServerState::GameServer);
 
-                let config = web_transport_config("".to_string());
+                #[cfg(target_family = "wasm")]
+                let config = aeronet_websocket::client::ClientConfig::default();
+
+                #[cfg(not(target_family = "wasm"))]
+                let config = aeronet_websocket::client::ClientConfig::builder().with_no_cert_validation();
                 commands
                     .spawn((
                         Name::new(format!("Game server {server}")),
                         AeronetRepliconClient,
                     ))
-                    .queue(WebTransportClient::connect(config, server));
+                    .queue(WebSocketClient::connect(config, server));
             }
             UserServerPacket::PlayerJoined(_) => {}
             UserServerPacket::PlayerLeft(_) => {}
@@ -196,7 +200,7 @@ fn on_authentication_requested(
         };
 
         info!("Sending {:?}", auth);
-        writer.send(AuthenticatePlayer {
+        writer.write(AuthenticatePlayer {
             id: auth.id,
             credentials: auth.credentials,
         });

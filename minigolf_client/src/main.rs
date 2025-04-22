@@ -40,7 +40,7 @@ fn main() -> AppExit {
 }
 
 fn set_window_title(mut primary_windows: Query<&mut Window, With<PrimaryWindow>>) {
-    if let Ok(mut window) = primary_windows.get_single_mut() {
+    if let Ok(mut window) = primary_windows.single_mut() {
         window.title = "Minigolf".to_string();
     }
 }
@@ -81,6 +81,7 @@ fn setup_level(mut commands: Commands) {
         TargetTransform::new(Transform::from_xyz(-2.5, 5.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y)),
         Msaa::Sample8,
         ShadowFilteringMethod::Gaussian,
+        MeshPickingCamera,
     ));
 }
 
@@ -91,7 +92,7 @@ fn on_level_mesh_added(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
 ) {
-    let entity = trigger.entity();
+    let entity = trigger.target();
     let level_mesh = query.get(entity).unwrap();
     let mesh_handle: Handle<Mesh> = server.load(level_mesh.clone().asset);
 
@@ -112,7 +113,7 @@ fn on_power_up_added(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
 ) {
-    let entity = trigger.entity();
+    let entity = trigger.target();
 
     commands.entity(entity).insert((
         Mesh3d(meshes.add(Sphere::new(0.1))),
@@ -150,7 +151,7 @@ fn on_player_added(
     all_players: Query<(Entity, &Player)>,
     authentication: Res<Authentication>,
 ) {
-    let entity = trigger.entity();
+    let entity = trigger.target();
     let player_mesh_handle: Handle<Mesh> = server.load("Player.glb#Mesh0/Primitive0");
 
     commands.entity(entity).insert((
@@ -163,7 +164,7 @@ fn on_player_added(
         })),
     ));
 
-    if let Err(QuerySingleError::NoEntities(_)) = players.get_single() {
+    if let Err(QuerySingleError::NoEntities(_)) = players.single() {
         let x = all_players
             .iter()
             .filter(|(e, p)| *e == entity && p.id == authentication.id)
@@ -173,7 +174,7 @@ fn on_player_added(
         if let &[_] = x.as_slice() {
             commands
                 .entity(entity)
-                .insert((LocalPlayer, AccumulatedInputs::default()));
+                .insert((LocalPlayer, AccumulatedInputs::default(), Pickable::default()));
         }
     }
 }

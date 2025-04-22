@@ -70,7 +70,7 @@ fn accumulate_mouse_movement(
     mut inputs: Query<&mut TargetTransform, With<Camera3d>>,
 ) {
     for ev in mouse_motion_events.read() {
-        let Ok(mut target) = inputs.get_single_mut() else {
+        let Ok(mut target) = inputs.single_mut() else {
             continue;
         };
 
@@ -82,11 +82,11 @@ fn follow_player_with_camera(
     player: Query<&Transform, With<LocalPlayer>>,
     mut camera: Query<&mut TargetTransform, With<Camera3d>>,
 ) {
-    let Ok(mut camera) = camera.get_single_mut() else {
+    let Ok(mut camera) = camera.single_mut() else {
         return;
     };
 
-    match player.get_single() {
+    match player.single() {
         Ok(position) => camera.target = position.translation,
         _ => {}
     };
@@ -97,7 +97,7 @@ fn move_camera_based_on_scroll(
     mut mouse_scroll_events: EventReader<MouseWheel>,
 ) {
     for mouse_wheel in mouse_scroll_events.read() {
-        let Ok(mut camera_transform) = camera.get_single_mut() else {
+        let Ok(mut camera_transform) = camera.single_mut() else {
             continue;
         };
 

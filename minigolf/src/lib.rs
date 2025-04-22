@@ -45,15 +45,15 @@ impl Plugin for MinigolfPlugin {
             .replicate::<LevelMesh>()
             .replicate::<Name>();
 
-        app.add_client_event::<AuthenticatePlayer>(ChannelKind::Ordered)
-            .add_client_event::<PlayerInput>(ChannelKind::Ordered)
-            .add_server_event::<RequestAuthentication>(ChannelKind::Ordered);
+        app.add_client_event::<AuthenticatePlayer>(Channel::Ordered)
+            .add_client_event::<PlayerInput>(Channel::Ordered)
+            .add_server_event::<RequestAuthentication>(Channel::Ordered);
     }
 }
 
 /// Marker component for a player in the game.
 #[derive(Component, Reflect, Serialize, Deserialize, Debug, Copy, Clone)]
-#[require(StateScoped<GameState>(|| StateScoped(GameState::Playing)))]
+#[require(StateScoped::<GameState>(GameState::Playing))]
 pub struct Player {
     pub id: PlayerId,
     pub can_move: bool,
@@ -91,7 +91,7 @@ impl Default for PlayerCredentials {
 }
 
 #[derive(Debug, Clone, Component, Serialize, Deserialize, Reflect)]
-#[require(StateScoped<GameState>(|| StateScoped(GameState::Playing)))]
+#[require(StateScoped::<GameState>(GameState::Playing))]
 pub struct LevelMesh {
     pub asset: String,
 }

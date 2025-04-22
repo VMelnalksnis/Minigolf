@@ -5,7 +5,7 @@ use {
     },
     aeronet::{io::Session, io::bytes::Bytes, io::connection::LocalAddr, io::server::Server},
     aeronet_websocket::server::{ServerConfig, WebSocketServer},
-    bevy::prelude::*,
+    bevy::{ecs::component::ComponentInfo, prelude::*},
     minigolf::{
         Player, PlayerCredentials,
         lobby::{LobbyMember, UserClientPacket, UserServerPacket},
@@ -51,7 +51,7 @@ fn on_opened(
     addresses: Query<&LocalAddr>,
     users: Query<&UserListener>,
 ) {
-    let server = trigger.entity();
+    let server = trigger.target();
     let local_addr = addresses
         .get(server)
         .expect("opened server should have a binding socket `LocalAddr`");
@@ -64,15 +64,15 @@ fn on_opened(
 fn on_connected(
     trigger: Trigger<OnAdd, Session>,
     mut sessions: Query<&mut Session>,
-    servers: Query<&Parent>,
+    servers: Query<&ChildOf>,
     users: Query<&UserListener>,
     mut commands: Commands,
 ) {
-    let client = trigger.entity();
+    let client = trigger.target();
     let server = servers
         .get(client)
         .expect("connected session should have a server")
-        .get();
+        .parent();
 
     if let Ok(_) = users.get(server) {
         info!("User {client} connected to {server}");
@@ -138,10 +138,6 @@ fn handle_messages(
 
                     commands.entity(lobby).insert(lobby_member);
                     commands.entity(user_session).insert(lobby_member);
-
-                    // start_game_writer.send(StartGame {
-                    //     lobby_id: lobby_member.lobby_id,
-                    // });
                 }
 
                 UserClientPacket::JoinLobby(id) => {
@@ -149,8 +145,6 @@ fn handle_messages(
 
                     let message: String = UserServerPacket::LobbyJoined(id).into();
                     session.send.push(Bytes::from_owner(message));
-
-                    start_game_writer.send(StartGame { lobby_id: id });
                 }
 
                 UserClientPacket::ListLobbies => {
@@ -164,7 +158,7 @@ fn handle_messages(
 
                 UserClientPacket::StartGame => {
                     let user_lobby = members.get(user_session).unwrap();
-                    start_game_writer.send(user_lobby.into());
+                    start_game_writer.write(user_lobby.into());
                 }
                 UserClientPacket::LeaveLobby => {
                     commands.entity(user_session).remove::<LobbyMember>();
@@ -179,7 +173,7 @@ fn on_lobby_id_added(
     world: &World,
     lobby_ids: Query<(Entity, &LobbyMember)>,
 ) {
-    let entity = trigger.entity();
+    let entity = trigger.target();
     let (_, lobby_id) = lobby_ids.get(entity).unwrap();
 
     println!(
@@ -187,7 +181,8 @@ fn on_lobby_id_added(
         lobby_id,
         world
             .inspect_entity(entity)
-            .map(|info| info.name())
+            .unwrap()
+            .map(ComponentInfo::name)
             .collect::<Vec<_>>()
     );
 
@@ -200,7 +195,8 @@ fn on_lobby_id_added(
                 id,
                 world
                     .inspect_entity(e)
-                    .map(|info| info.name())
+                    .unwrap()
+                    .map(ComponentInfo::name)
                     .collect::<Vec<_>>()
             );
         });

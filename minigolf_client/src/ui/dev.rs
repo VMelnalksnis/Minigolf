@@ -1,33 +1,16 @@
 use {
     aeronet::io::{Session, SessionEndpoint, connection::Disconnect},
-    bevy::{input::common_conditions::input_toggle_active, prelude::*},
+    bevy::prelude::*,
     bevy_egui::{EguiContexts, egui},
-    bevy_inspector_egui::quick::WorldInspectorPlugin,
     bevy_replicon::prelude::*,
-    iyes_perf_ui::prelude::*,
 };
 
 pub(crate) struct DebugUiPlugin;
 
 impl Plugin for DebugUiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(
-            WorldInspectorPlugin::default().run_if(input_toggle_active(true, KeyCode::Escape)),
-        )
-        .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin::default())
-        .add_plugins(bevy::diagnostic::EntityCountDiagnosticsPlugin)
-        .add_plugins(bevy::diagnostic::SystemInformationDiagnosticsPlugin)
-        .add_plugins(bevy::render::diagnostic::RenderDiagnosticsPlugin)
-        .add_plugins(PerfUiPlugin);
-
-        app.add_systems(Startup, enable_perf_metrics_ui);
-
         app.add_systems(Update, network_stats_ui);
     }
-}
-
-fn enable_perf_metrics_ui(mut commands: Commands) {
-    commands.spawn(PerfUiDefaultEntries::default());
 }
 
 fn network_stats_ui(

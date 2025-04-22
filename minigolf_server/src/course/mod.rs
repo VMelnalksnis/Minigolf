@@ -38,10 +38,6 @@ impl Plugin for CoursePlugin {
             FixedUpdate,
             PlayingSet.run_if(in_state(ServerState::Playing)),
         );
-        app.configure_sets(
-            PostProcessCollisions,
-            PlayingSet.run_if(in_state(ServerState::Playing)),
-        );
 
         app.add_systems(
             Update,
@@ -127,7 +123,6 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
             Name::new("Scene"),
             SceneRoot::default(),
             Replicated,
-            ParentSync::default(),
         ))
         .id();
 
@@ -138,9 +133,8 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
             Transform::default(),
             Visibility::default(),
             Replicated,
-            ParentSync::default(),
         ))
-        .set_parent(scene)
+        .insert(ChildOf(scene))
         .id();
 
     let floor_path = "Course1.glb#Mesh4/Primitive0";
@@ -161,7 +155,6 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
                 },
                 Transform::from_xyz(x_offset + offset, 0.0, 0.0),
                 Replicated,
-                ParentSync::default(),
                 Mesh3d(floor_handle.clone()),
                 LevelMesh::from_path(floor_path),
                 RigidBody::Static,
@@ -170,7 +163,7 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
                 Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
                 Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
             ))
-            .set_parent(course)
+            .insert(ChildOf(course))
             .id();
 
         commands
@@ -179,7 +172,6 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
                 Transform::from_xyz(-offset, 0.0, 0.0),
                 HoleWalls { hole_entity: hole },
                 Replicated,
-                ParentSync::default(),
                 Mesh3d(walls_handle.clone()),
                 LevelMesh::from_path(walls_path),
                 RigidBody::Static,
@@ -188,7 +180,7 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
                 Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
                 Restitution::new(1.0).with_combine_rule(CoefficientCombine::Max),
             ))
-            .set_parent(hole);
+            .insert(ChildOf(hole));
 
         commands
             .spawn((
@@ -201,7 +193,7 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
                 Collider::cuboid(4.0, 2.0, 3.0),
                 CollidingEntities::default(),
             ))
-            .set_parent(hole);
+            .insert(ChildOf(hole));
 
         commands
             .spawn((
@@ -214,7 +206,7 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
                 Collider::cuboid(0.2, 0.09, 0.2),
                 CollidingEntities::default(),
             ))
-            .set_parent(hole);
+            .insert(ChildOf(hole));
 
         commands
             .spawn(power_up_bundle(Transform::from_xyz(
@@ -222,7 +214,7 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
                 0.15,
                 0.0,
             )))
-            .set_parent(hole);
+            .insert(ChildOf(hole));
 
         commands
             .spawn(power_up_bundle(Transform::from_xyz(
@@ -230,7 +222,7 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
                 0.05,
                 0.8,
             )))
-            .set_parent(hole);
+            .insert(ChildOf(hole));
 
         commands
             .spawn(power_up_bundle(Transform::from_xyz(
@@ -238,7 +230,7 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
                 0.05,
                 0.8,
             )))
-            .set_parent(hole);
+            .insert(ChildOf(hole));
 
         commands
             .spawn(power_up_bundle(Transform::from_xyz(
@@ -246,7 +238,7 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
                 0.05,
                 -0.8,
             )))
-            .set_parent(hole);
+            .insert(ChildOf(hole));
     }
 }
 
@@ -270,8 +262,8 @@ fn on_hole_added(
     hole: Query<&Hole>,
     mut commands: Commands,
 ) {
-    let hole_entity = trigger.entity();
-    let mut course = course.single_mut();
+    let hole_entity = trigger.target();
+    let mut course = course.single_mut().unwrap();
     course.holes.push(hole_entity);
 
     if let &[_] = course.holes.as_slice() {
@@ -396,7 +388,7 @@ fn current_hole_modified(
     }
 
     let _ = current_hole.players.drain(..).collect::<Vec<_>>();
-    let course = course.single();
+    let course = course.single().unwrap();
     info!(
         "Course {:?}, current hole {:?}",
         course, current_hole.hole_entity
@@ -412,7 +404,7 @@ fn current_hole_modified(
     info!("Remaining holes {:?}", remaining_holes);
 
     let Some(next_hole) = remaining_holes.first() else {
-        writer.send(CourseCompleted);
+        writer.write(CourseCompleted);
         return;
     };
 
