@@ -33,16 +33,4 @@ jobs:
           sudo apt install -y build-essential gcc make pkg-config libasound2-dev libudev-dev
 
       - name: Build server
-        run: |
-          cargo build --bin minigolf_server
-          sudo ls -lh ./target/debug
-
-      - name: Build lobby
-        run: |
-          cargo build --bin minigolf_lobby
-          sudo ls -lh ./target/debug
-
-      - name: Build client
-        run: |
-          cargo build --bin minigolf_client --target wasm32-unknown-unknown
-          sudo ls -lh ./target/wasm32-unknown-unknown/debug
+        run: ./build/ci.sh
