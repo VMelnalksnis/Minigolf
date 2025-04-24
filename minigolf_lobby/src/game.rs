@@ -7,7 +7,6 @@ use {
         lobby::{GameClientPacket, GameServerPacket, LobbyId, LobbyMember},
         {Player, PlayerCredentials},
     },
-    std::{net::SocketAddr, ops::RangeFull},
 };
 
 #[derive(Debug)]
@@ -35,7 +34,7 @@ struct GameServerSession;
 
 #[derive(Debug, Component)]
 struct GameServer {
-    address: SocketAddr,
+    address: String,
 }
 
 fn open_listener(mut commands: Commands, args: Res<Args>) {
@@ -87,35 +86,37 @@ fn on_connected(
 fn handle_messages(
     mut sessions: Query<(Entity, &mut Session), With<GameServerSession>>,
     mut game_started_writer: EventWriter<GameStarted>,
+    game_servers: Query<&GameServer>,
     mut commands: Commands,
 ) {
-    for (entity, mut session) in &mut sessions {
+    for (server_entity, mut session) in &mut sessions {
         let session = &mut *session;
 
-        for message in session.recv.drain(RangeFull::default()) {
+        for message in session.recv.drain(..) {
             let client_packet = GameClientPacket::from(message.payload.as_ref());
             info!("{client_packet:?}");
 
-            match client_packet {
+            match &client_packet {
                 GameClientPacket::Hello => {
                     let response: String = GameServerPacket::Hello.into();
                     session.send.push(Bytes::from_owner(response));
                 }
 
                 GameClientPacket::Available(game_server_address) => {
-                    commands.entity(entity).insert(GameServer {
-                        address: game_server_address,
+                    commands.entity(server_entity).insert(GameServer {
+                        address: game_server_address.clone(),
                     });
                 }
 
                 GameClientPacket::Busy => {
-                    todo!()
+                    commands.entity(server_entity).remove::<GameServer>();
                 }
 
                 GameClientPacket::GameCreated(lobby_id) => {
+                    let server = game_servers.get(server_entity).unwrap();
                     game_started_writer.write(GameStarted {
-                        lobby_id,
-                        server: "ws://localhost:25566".into(),
+                        lobby_id: *lobby_id,
+                        server: server.address.clone(),
                     });
                 }
             }
@@ -123,7 +124,7 @@ fn handle_messages(
             match client_packet {
                 GameClientPacket::Available(_) => {}
                 _ => {
-                    commands.entity(entity).remove::<GameServer>();
+                    commands.entity(server_entity).remove::<GameServer>();
                 }
             };
         }
@@ -131,21 +132,23 @@ fn handle_messages(
 }
 
 fn on_game_server_added(trigger: Trigger<OnAdd, GameServer>, servers: Query<&GameServer>) {
-    let entity = trigger.target();
-    let connected_server = servers.get(entity).unwrap();
-    info!("Added new game server {connected_server:?}");
+    let connected_server = servers.get(trigger.target()).unwrap();
+    let all_servers = &servers.iter().collect::<Vec<_>>();
 
-    for server in &servers {
-        info!("Available server {server:?}");
-    }
+    info!("Added new game server {connected_server:?}, all servers {all_servers:?}");
 }
 
-fn on_game_server_removed(_trigger: Trigger<OnRemove, GameServer>, servers: Query<&GameServer>) {
-    info!("Removed game server");
+fn on_game_server_removed(
+    trigger: Trigger<OnRemove, GameServer>,
+    servers: Query<(Entity, &GameServer)>,
+) {
+    let remaining = &servers
+        .iter()
+        .filter(|(e, _)| *e != trigger.target())
+        .map(|(_, s)| s)
+        .collect::<Vec<_>>();
 
-    for server in &servers {
-        info!("Available server {server:?}");
-    }
+    info!("Removed game server, remaining {remaining:?}");
 }
 
 #[derive(Event, Debug)]

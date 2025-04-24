@@ -1,9 +1,6 @@
 use {
     crate::ui::{ServerState, lobby_server::LobbyServerSession},
-    aeronet::io::{
-        Session, SessionEndpoint,
-        connection::{Disconnected},
-    },
+    aeronet::io::{Session, SessionEndpoint, connection::Disconnected},
     aeronet_replicon::client::{AeronetRepliconClient, AeronetRepliconClientPlugin},
     aeronet_websocket::client::{WebSocketClient, WebSocketClientPlugin},
     aeronet_webtransport::{
@@ -112,7 +109,12 @@ fn on_connecting(trigger: Trigger<OnAdd, SessionEndpoint>, names: Query<&Name>) 
     info!("{name} connecting");
 }
 
-fn on_disconnected(trigger: Trigger<Disconnected>, names: Query<&Name>) {
+fn on_disconnected(
+    trigger: Trigger<Disconnected>,
+    names: Query<&Name>,
+    game_servers: Query<(), With<AeronetRepliconClient>>,
+    mut state: ResMut<NextState<ServerState>>,
+) {
     let session = trigger.target();
     let name = names
         .get(session)
@@ -129,6 +131,11 @@ fn on_disconnected(trigger: Trigger<Disconnected>, names: Query<&Name>) {
             info!("{name} disconnected due to error: {err:?}");
         }
     };
+
+    if let Ok(_) = game_servers.get(session) {
+        info!("Disconnected from game server, falling back to current lobby");
+        state.set(ServerState::Lobby);
+    }
 }
 
 fn handle_lobby_server_packets(

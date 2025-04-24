@@ -1,5 +1,8 @@
 use {
-    crate::{ServerState, server::Args},
+    crate::{
+        ServerState,
+        server::{Args, PlayerSession},
+    },
     aeronet::{
         io::bytes::Bytes,
         io::connection::Disconnect,
@@ -70,6 +73,8 @@ impl Plugin for ServerNetworkPlugin {
                 (lobby_connection_messages, reconnect_to_lobby).in_set(LobbySet),
             );
 
+        app.add_systems(OnEnter(ServerState::WaitingForGame), inform_lobby_server);
+
         app.configure_sets(
             Update,
             GameSet.run_if(in_state(ServerState::WaitingForGame)),
@@ -89,6 +94,8 @@ impl Plugin for ServerNetworkPlugin {
             (player_authentication_handler, all_players_joined).in_set(PlayersJoiningSet),
         )
         .register_type::<UnauthenticatedSession>();
+
+        app.add_systems(OnExit(ServerState::Playing), disconnect_players);
     }
 }
 
@@ -119,7 +126,7 @@ type WebTransportServerConfig = aeronet_webtransport::server::ServerConfig;
 
 fn web_transport_config(identity: wtransport::Identity, args: &Args) -> WebTransportServerConfig {
     WebTransportServerConfig::builder()
-        .with_bind_default(args.wt_port)
+        .with_bind_default(args.web_transport_port)
         .with_identity(identity)
         .keep_alive_interval(Some(Duration::from_secs(1)))
         .max_idle_timeout(Some(Duration::from_secs(5)))
@@ -140,7 +147,7 @@ fn open_web_socket_server(mut commands: Commands, args: Res<Args>) {
 
 fn web_socket_config(args: &Args) -> WebSocketServerConfig {
     WebSocketServerConfig::builder()
-        .with_bind_default(args.ws_port)
+        .with_bind_default(args.web_socket_port)
         .with_no_encryption()
 }
 
@@ -191,14 +198,11 @@ fn lobby_setup(mut commands: Commands, args: Res<Args>) {
 
 fn lobby_connection_messages(
     mut sessions: Query<&mut Session, With<WebSocketClient>>,
-    servers: Query<&LocalAddr, With<WebSocketServer>>,
     mut server_state: ResMut<NextState<ServerState>>,
 ) {
     let Ok(mut session) = sessions.single_mut() else {
         return;
     };
-
-    let session = &mut *session;
 
     for message in session.recv.drain(..) {
         let server_packet = GameServerPacket::from(message.payload.as_ref());
@@ -206,13 +210,10 @@ fn lobby_connection_messages(
 
         match server_packet {
             GameServerPacket::Hello => {
-                let server_address = servers.single().unwrap().0;
-                let response: String = GameClientPacket::Available(server_address).into();
-                session.send.push(Bytes::from_owner(response));
                 server_state.set(ServerState::WaitingForGame);
             }
 
-            GameServerPacket::CreateGame(_, _) => unimplemented!(),
+            _ => unimplemented!(),
         }
     }
 }
@@ -254,6 +255,17 @@ fn connect_to_lobby(mut commands: Commands, args: Res<Args>) {
         .queue(WebSocketClient::connect(config, target));
 }
 
+fn inform_lobby_server(mut sessions: Query<&mut Session, With<WebSocketClient>>, args: Res<Args>) {
+    let Ok(mut session) = sessions.single_mut() else {
+        return;
+    };
+
+    let session = &mut *session;
+    let address = args.get_publish_address();
+    let response: String = GameClientPacket::Available(address).into();
+    session.send.push(Bytes::from_owner(response));
+}
+
 // game setup
 
 #[derive(SystemSet, Clone, Eq, PartialEq, Hash, Debug)]
@@ -275,8 +287,6 @@ fn game_setup_messages(
         info!("{server_packet:?}");
 
         match server_packet {
-            GameServerPacket::Hello => unimplemented!(),
-
             GameServerPacket::CreateGame(lobby_id, players) => {
                 for (player_id, player_credentials) in players.into_iter() {
                     commands.spawn((
@@ -289,6 +299,8 @@ fn game_setup_messages(
 
                 server_state.set(ServerState::WaitingForPlayers);
             }
+
+            _ => unimplemented!(),
         }
     }
 }
@@ -455,7 +467,14 @@ fn on_connected(
     };
 }
 
-fn on_disconnected(trigger: Trigger<Disconnected>, servers: Query<&ChildOf>, names: Query<&Name>) {
+fn on_disconnected(
+    trigger: Trigger<Disconnected>,
+    servers: Query<&ChildOf>,
+    names: Query<&Name>,
+    authenticated_players: Query<Entity, With<PlayerSession>>,
+    current_state: Res<State<ServerState>>,
+    mut next_state: ResMut<NextState<ServerState>>,
+) {
     let client = trigger.target();
 
     if let Ok(server) = servers.get(client).map(ChildOf::parent) {
@@ -469,6 +488,11 @@ fn on_disconnected(trigger: Trigger<Disconnected>, servers: Query<&ChildOf>, nam
             Disconnected::ByError(err) => {
                 warn!("{client} disconnected from {server} due to error: {err:?}");
             }
+        }
+
+        if authenticated_players.is_empty() && *current_state.get() == ServerState::Playing {
+            warn!("Zero players while still playing, ending game");
+            next_state.set(ServerState::WaitingForGame);
         }
     } else if let Ok(name) = names.get(client) {
         match trigger.event() {
@@ -487,4 +511,10 @@ fn on_disconnected(trigger: Trigger<Disconnected>, servers: Query<&ChildOf>, nam
     } else {
         return;
     };
+}
+
+fn disconnect_players(players: Query<Entity, With<PlayerSession>>, mut commands: Commands) {
+    for player in players.iter() {
+        commands.trigger_targets(Disconnect::new("Game completed"), player);
+    }
 }

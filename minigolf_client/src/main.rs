@@ -6,7 +6,7 @@ use {
     crate::{
         input::{AccumulatedInputs, MinigolfInputPlugin, camera::TargetTransform},
         network::{Authentication, ClientNetworkPlugin},
-        ui::ClientUiPlugin,
+        ui::{ClientUiPlugin, ServerState},
     },
     aeronet::io::{Session, connection::Disconnected},
     bevy::{
@@ -15,6 +15,7 @@ use {
         prelude::{AlphaMode::Blend, *},
         window::PrimaryWindow,
     },
+    bevy_replicon::prelude::*,
     minigolf::{GameState, LevelMesh, MinigolfPlugin, Player, PowerUp},
     web_sys::{HtmlCanvasElement, wasm_bindgen::JsCast},
 };
@@ -36,6 +37,7 @@ fn main() -> AppExit {
         .add_observer(on_level_mesh_added)
         .add_observer(on_power_up_added)
         .add_observer(on_disconnected)
+        .add_systems(OnExit(ServerState::GameServer), despawn_replicated)
         .run()
 }
 
@@ -172,9 +174,18 @@ fn on_player_added(
             .collect::<Vec<_>>();
 
         if let &[_] = x.as_slice() {
-            commands
-                .entity(entity)
-                .insert((LocalPlayer, AccumulatedInputs::default(), Pickable::default()));
+            commands.entity(entity).insert((
+                LocalPlayer,
+                AccumulatedInputs::default(),
+                Pickable::default(),
+            ));
         }
+    }
+}
+
+/// Just to be safe that all entities from the server are removed
+fn despawn_replicated(replicated: Query<Entity, With<Replicated>>, mut commands: Commands) {
+    for entity in replicated.iter() {
+        commands.entity(entity).despawn();
     }
 }

@@ -2,7 +2,6 @@ use {
     crate::PlayerCredentials,
     bevy::prelude::*,
     serde::{Deserialize, Serialize},
-    std::net::SocketAddr,
     uuid::Uuid,
 };
 
@@ -48,7 +47,7 @@ impl From<LobbyId> for LobbyMember {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum GameClientPacket {
     Hello,
-    Available(SocketAddr),
+    Available(String),
     Busy,
     GameCreated(LobbyId),
 }

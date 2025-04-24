@@ -26,11 +26,11 @@ impl Plugin for CoursePlugin {
             .register_type::<HoleWalls>()
             .register_type::<PlayerScore>();
 
-        app.add_event::<CourseCompleted>();
-
         app.add_observer(on_hole_added);
 
         app.add_systems(OnEnter(ServerState::WaitingForPlayers), setup_course);
+
+        app.add_systems(OnEnter(ServerState::Playing), setup_playing);
         app.add_systems(OnExit(ServerState::Playing), despawn_level);
 
         app.configure_sets(Update, PlayingSet.run_if(in_state(ServerState::Playing)));
@@ -58,6 +58,21 @@ impl Plugin for CoursePlugin {
 
 #[derive(Event)]
 pub(crate) struct CourseCompleted;
+
+fn setup_playing(mut commands: Commands) {
+    commands.spawn((
+        Name::new("Course Completed observer"),
+        Observer::new(on_course_completed),
+        StateScoped(ServerState::Playing),
+    ));
+}
+
+fn on_course_completed(
+    _trigger: Trigger<CourseCompleted>,
+    mut state: ResMut<NextState<ServerState>>,
+) {
+    state.set(ServerState::WaitingForGame);
+}
 
 #[derive(Component, Reflect, Debug)]
 pub(crate) struct Course {
@@ -119,11 +134,7 @@ pub(crate) struct PlayingSet;
 
 fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
     let scene = commands
-        .spawn((
-            Name::new("Scene"),
-            SceneRoot::default(),
-            Replicated,
-        ))
+        .spawn((Name::new("Scene"), SceneRoot::default(), Replicated))
         .id();
 
     let course = commands
@@ -366,7 +377,6 @@ fn current_hole_modified(
     mut players: Query<(Entity, &mut LastPlayerPosition, &mut Transform), With<Player>>,
     course: Query<&Course>,
     holes: Query<&Hole>,
-    mut writer: EventWriter<CourseCompleted>,
     mut commands: Commands,
 ) {
     if !current_hole.is_changed() {
@@ -404,7 +414,7 @@ fn current_hole_modified(
     info!("Remaining holes {:?}", remaining_holes);
 
     let Some(next_hole) = remaining_holes.first() else {
-        writer.write(CourseCompleted);
+        commands.trigger(CourseCompleted);
         return;
     };
 
@@ -428,6 +438,6 @@ fn current_hole_modified(
 
 fn despawn_level(scenes: Query<Entity, With<SceneRoot>>, mut commands: Commands) {
     for scene in scenes.iter() {
-        commands.entity(scene).despawn();
+        commands.entity(scene).try_despawn(); // todo: does not despawn power ups
     }
 }

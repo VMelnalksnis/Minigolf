@@ -10,7 +10,10 @@ use {
     bevy::prelude::*,
     bevy_replicon::{prelude::*, server::increment_tick},
     minigolf::{MinigolfPlugin, Player, PlayerInput, PlayerPowerUps},
-    std::net::{IpAddr, Ipv6Addr, SocketAddr},
+    std::{
+        net::{IpAddr, Ipv6Addr, SocketAddr},
+        path::PathBuf,
+    },
 };
 
 const WEB_TRANSPORT_PORT: u16 = 25565;
@@ -31,13 +34,35 @@ pub(crate) enum GameLayer {
 pub(crate) struct Args {
     /// Port to listen for WebTransport connections on
     #[arg(long, default_value_t = WEB_TRANSPORT_PORT)]
-    pub(crate) wt_port: u16,
+    pub(crate) web_transport_port: u16,
+
     /// Port to listen for WebSocket connections on
     #[arg(long, default_value_t = WEB_SOCKET_PORT)]
-    pub(crate) ws_port: u16,
+    pub(crate) web_socket_port: u16,
+
+    /// Certificate to use for the WebSocket and WebTransport servers
+    #[arg(long)]
+    pub(crate) certificate_filepath: Option<PathBuf>,
+    /// Private key for [certificate_filepath]
+    #[arg(long)]
+    pub(crate) private_key_filepath: Option<PathBuf>,
+
+    /// Address to publish for clients to connect to the server
+    #[arg(long)]
+    pub(crate) publish_address: Option<String>,
     /// The address of the minigolf lobby server
     #[arg(long, default_value_t = LOBBY_ADDRESS)]
     pub(crate) lobby_address: SocketAddr,
+}
+
+impl Args {
+    pub(crate) fn get_publish_address(&self) -> String {
+        if let Some(address) = &self.publish_address {
+            address.clone()
+        } else {
+            format!("ws://localhost:{}", &self.web_socket_port)
+        }
+    }
 }
 
 impl FromWorld for Args {
@@ -47,7 +72,7 @@ impl FromWorld for Args {
 }
 
 #[derive(Component, Reflect)]
-struct PlayerSession {
+pub(crate) struct PlayerSession {
     player: Entity,
 }
 
@@ -223,7 +248,9 @@ fn on_player_authenticated(
             CollisionLayers::new(GameLayer::Player, [GameLayer::Default]),
             Mass::from(0.04593),
             Transform::from_translation(initial_position),
-            Friction::new(0.8).with_dynamic_coefficient(0.2).with_combine_rule(CoefficientCombine::Multiply),
+            Friction::new(0.8)
+                .with_dynamic_coefficient(0.2)
+                .with_combine_rule(CoefficientCombine::Multiply),
             Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
             AngularDamping(3.0),
             SweptCcd::default(),
