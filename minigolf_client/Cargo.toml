@@ -9,7 +9,7 @@ authors.workspace = true
 minigolf = { path = "../minigolf" }
 
 bevy = { workspace = true, features = ["bevy_picking"] }
-bevy_egui = { workspace = true }
+bevy_egui = { workspace = true, features = ["manage_clipboard"] }
 
 aeronet = { workspace = true }
 aeronet_websocket = { workspace = true, features = ["client"] }
