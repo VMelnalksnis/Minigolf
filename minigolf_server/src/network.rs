@@ -97,6 +97,7 @@ impl Plugin for ServerNetworkPlugin {
         )
         .register_type::<UnauthenticatedSession>();
 
+        app.add_systems(OnEnter(ServerState::Playing), setup_observers);
         app.add_systems(OnExit(ServerState::Playing), disconnect_players);
     }
 }
@@ -469,13 +470,14 @@ fn on_connected(
     };
 }
 
+#[derive(Event, Reflect, Debug)]
+struct PlayerDisconnected;
+
 fn on_disconnected(
     trigger: Trigger<Disconnected>,
     servers: Query<&ChildOf>,
     names: Query<&Name>,
-    authenticated_players: Query<Entity, With<PlayerSession>>,
-    current_state: Res<State<ServerState>>,
-    mut next_state: ResMut<NextState<ServerState>>,
+    mut commands: Commands,
 ) {
     let client = trigger.target();
 
@@ -492,10 +494,7 @@ fn on_disconnected(
             }
         }
 
-        if authenticated_players.is_empty() && *current_state.get() == ServerState::Playing {
-            warn!("Zero players while still playing, ending game");
-            next_state.set(ServerState::WaitingForGame);
-        }
+        commands.trigger_targets(PlayerDisconnected, client);
     } else if let Ok(name) = names.get(client) {
         match trigger.event() {
             Disconnected::ByUser(reason) => {
@@ -513,6 +512,34 @@ fn on_disconnected(
     } else {
         return;
     };
+}
+
+fn setup_observers(mut commands: Commands) {
+    commands.spawn((
+        Name::new("Player disconnection observer"),
+        StateScoped(ServerState::Playing),
+        Observer::new(on_player_disconnected),
+    ));
+}
+
+fn on_player_disconnected(
+    trigger: Trigger<PlayerDisconnected>,
+    authenticated_players: Query<Entity, With<PlayerSession>>,
+    mut next_state: ResMut<NextState<ServerState>>,
+) {
+    let player_entity = trigger.target();
+
+    let remaining_players = authenticated_players
+        .iter()
+        .filter(|entity| *entity != player_entity)
+        .collect::<Vec<_>>();
+
+    if remaining_players.is_empty() {
+        warn!("Zero players while still playing, ending game");
+        next_state.set(ServerState::WaitingForGame);
+    } else {
+        info!("Remaining players {:?}", remaining_players);
+    }
 }
 
 fn disconnect_players(players: Query<Entity, With<PlayerSession>>, mut commands: Commands) {
