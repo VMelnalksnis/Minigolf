@@ -3,7 +3,7 @@ mod power_ups;
 use {
     crate::{
         ServerState,
-        course::power_ups::{PowerUpPlugin, StickyBall},
+        course::power_ups::PowerUpPlugin,
         server::{GameLayer, LastPlayerPosition, ValidPlayerInput},
     },
     avian3d::prelude::*,
@@ -56,13 +56,22 @@ impl Plugin for CoursePlugin {
     }
 }
 
-#[derive(Event)]
+#[derive(Event, Reflect, Debug)]
+pub(crate) struct HoleCompleted;
+
+#[derive(Event, Reflect, Debug)]
 pub(crate) struct CourseCompleted;
 
 fn setup_playing(mut commands: Commands) {
     commands.spawn((
         Name::new("Course Completed observer"),
         Observer::new(on_course_completed),
+        StateScoped(ServerState::Playing),
+    ));
+
+    commands.spawn((
+        Name::new("Hole Completed observer"),
+        Observer::new(on_hole_completed),
         StateScoped(ServerState::Playing),
     ));
 }
@@ -314,13 +323,19 @@ fn log_score_changes(scores: Query<(Entity, &PlayerScore), Changed<PlayerScore>>
 fn handle_hole_sensors(
     holes: Query<(Entity, &CollidingEntities), (With<HoleSensor>, Changed<CollidingEntities>)>,
     players: Query<(Entity, &Player)>,
+    mut commands: Commands,
 ) {
     for (hole, hole_collisions) in holes.iter() {
         for (player_entity, player) in players.iter() {
             if hole_collisions.contains(&player_entity) {
-                info!("Player {:?} collided with hole {:?}", player, hole)
+                info!("Player {:?} collided with hole {:?}", player, hole);
+
+                // todo: should this be done somewhere else? and re-enable wind after exiting?
+                commands
+                    .entity(player_entity)
+                    .insert(ExternalForce::default());
             } else {
-                info!("Player {:?} left hole {:?}", player, hole)
+                info!("Player {:?} left hole {:?}", player, hole);
             }
         }
     }
@@ -373,10 +388,8 @@ fn handle_hole_bounding_box(
 }
 
 fn current_hole_modified(
-    mut current_hole: ResMut<CurrentHole>,
-    mut players: Query<(Entity, &mut LastPlayerPosition, &mut Transform), With<Player>>,
-    course: Query<&Course>,
-    holes: Query<&Hole>,
+    current_hole: Res<CurrentHole>,
+    players: Query<(), With<Player>>,
     mut commands: Commands,
 ) {
     if !current_hole.is_changed() {
@@ -397,6 +410,17 @@ fn current_hole_modified(
         return;
     }
 
+    commands.trigger(HoleCompleted);
+}
+
+fn on_hole_completed(
+    _trigger: Trigger<HoleCompleted>,
+    mut current_hole: ResMut<CurrentHole>,
+    mut players: Query<(&mut LastPlayerPosition, &mut Transform), With<Player>>,
+    course: Query<&Course>,
+    holes: Query<&Hole>,
+    mut commands: Commands,
+) {
     let _ = current_hole.players.drain(..).collect::<Vec<_>>();
     let course = course.single().unwrap();
     info!(
@@ -404,36 +428,32 @@ fn current_hole_modified(
         course, current_hole.hole_entity
     );
 
-    let remaining_holes = course
+    let next_hole = course
         .holes
         .iter()
-        .skip_while(|h| !current_hole.hole_entity.eq(*h))
+        .skip_while(|h| current_hole.hole_entity != **h)
         .skip(1)
-        .collect::<Vec<_>>();
+        .map(|h| *h)
+        .next();
 
-    info!("Remaining holes {:?}", remaining_holes);
-
-    let Some(next_hole) = remaining_holes.first() else {
+    let Some(next_hole_entity) = next_hole else {
         commands.trigger(CourseCompleted);
         return;
     };
 
-    let c = *holes.get(**next_hole).unwrap();
-    current_hole.hole_entity = **next_hole;
-    current_hole.hole = c;
+    let next_hole = holes.get(next_hole_entity).unwrap();
+    current_hole.hole_entity = next_hole_entity;
+    current_hole.hole = *next_hole;
 
-    for (player, mut last_position, mut transform) in &mut players {
-        transform.scale = Vec3::splat(1.0);
-        transform.translation = c.start_position;
+    players
+        .iter_mut()
+        .for_each(|(mut last_position, mut transform)| {
+            transform.scale = Vec3::splat(1.0);
+            transform.translation = next_hole.start_position;
 
-        last_position.position = c.start_position;
-        last_position.rotation = Quat::IDENTITY;
-
-        commands
-            .entity(player)
-            .insert(ExternalForce::ZERO.with_persistence(false)) // todo: is this needed?
-            .remove::<StickyBall>();
-    }
+            last_position.position = next_hole.start_position;
+            last_position.rotation = Quat::IDENTITY;
+        });
 }
 
 fn despawn_level(scenes: Query<Entity, With<SceneRoot>>, mut commands: Commands) {

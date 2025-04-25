@@ -1,6 +1,7 @@
 use {
     crate::{
-        course::{CurrentHole, HoleWalls, PlayingSet},
+        ServerState,
+        course::{CurrentHole, HoleCompleted, HoleWalls, PlayingSet},
         server::{LastPlayerPosition, ValidPlayerInput},
     },
     avian3d::prelude::*,
@@ -16,6 +17,8 @@ impl Plugin for PowerUpPlugin {
         app.register_type::<StickyWalls>();
         app.register_type::<StickyBall>();
 
+        app.add_systems(OnEnter(ServerState::Playing), setup_observers);
+
         app.add_systems(Update, apply_power_ups.in_set(PlayingSet));
 
         app.add_systems(
@@ -29,6 +32,14 @@ impl Plugin for PowerUpPlugin {
                 .in_set(PlayingSet),
         );
     }
+}
+
+fn setup_observers(mut commands: Commands) {
+    commands.spawn((
+        Name::new("Remove sticky ball observer"),
+        StateScoped(ServerState::Playing),
+        Observer::new(remove_sticky_ball),
+    ));
 }
 
 const WIND_POWER_UP_STRENGTH: f32 = 0.3;
@@ -165,9 +176,9 @@ fn remove_hole_magnet(
     >,
     mut commands: Commands,
 ) {
-    for player in players.iter() {
+    players.iter().for_each(|player| {
         commands.entity(player).remove::<HoleMagnetPowerUp>();
-    }
+    });
 }
 
 #[derive(Component, Reflect)]
@@ -186,10 +197,8 @@ fn apply_sticky(
 ) {
     let walls = walls.iter().collect::<Vec<_>>();
 
-    for contact_pair in collisions
-        .iter()
-        .filter(|c| !c.is_sensor()) // todo: broken in latest avian version
-    {
+    // todo: broken in latest avian version
+    for contact_pair in collisions.iter().filter(|c| !c.is_sensor()) {
         let Some(player_entity) = find_entity(
             &players.iter().map(|(e, _)| e).collect::<Vec<_>>(),
             contact_pair,
@@ -232,4 +241,14 @@ fn find_entity(entities: &Vec<Entity>, contacts: &ContactPair) -> Option<Entity>
     } else {
         None
     }
+}
+
+fn remove_sticky_ball(
+    _trigger: Trigger<HoleCompleted>,
+    players: Query<Entity, With<Player>>,
+    mut commands: Commands,
+) {
+    players.iter().for_each(|entity| {
+        commands.entity(entity).remove::<StickyBall>();
+    });
 }
