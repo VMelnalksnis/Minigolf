@@ -1,6 +1,9 @@
+mod listeners;
+
 use {
     crate::{
         ServerState,
+        network::listeners::ServerListenerPlugin,
         server::{Args, PlayerSession},
     },
     aeronet::{
@@ -12,16 +15,9 @@ use {
         },
         transport::AeronetTransportPlugin,
     },
-    aeronet_replicon::server::{AeronetRepliconServer, AeronetRepliconServerPlugin},
-    aeronet_websocket::{
-        client::{WebSocketClient, WebSocketClientPlugin},
-        server::{WebSocketServer, WebSocketServerPlugin},
-    },
-    aeronet_webtransport::{
-        cert,
-        server::{SessionRequest, SessionResponse, WebTransportServer, WebTransportServerPlugin},
-        wtransport,
-    },
+    aeronet_replicon::server::AeronetRepliconServerPlugin,
+    aeronet_websocket::client::{WebSocketClient, WebSocketClientPlugin},
+    aeronet_webtransport::server::{SessionRequest, SessionResponse},
     bevy::prelude::*,
     bevy_replicon::prelude::*,
     core::time::Duration,
@@ -35,26 +31,22 @@ use {
 };
 
 /// Sets up minigolf server networking.
-#[derive(Debug)]
 pub(crate) struct ServerNetworkPlugin;
 
 impl Plugin for ServerNetworkPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((WebTransportServerPlugin, WebSocketServerPlugin))
-            .add_plugins((WebSocketClientPlugin, AeronetTransportPlugin))
-            .add_plugins((
-                RepliconPlugins.set(ServerPlugin {
-                    // 1 frame lasts `1.0 / TICK_RATE` anyway
-                    tick_policy: TickPolicy::Manual,
-                    ..default()
-                }),
-                AeronetRepliconServerPlugin,
-            ))
-            .add_observer(on_opened)
+        app.add_plugins(ServerListenerPlugin);
+        app.add_plugins(WebSocketClientPlugin);
+        app.add_plugins((AeronetTransportPlugin, AeronetRepliconServerPlugin));
+        app.add_plugins(RepliconPlugins.set(ServerPlugin {
+            tick_policy: TickPolicy::Manual,
+            ..default()
+        }));
+
+        app.add_observer(on_opened)
             .add_observer(on_session_request)
             .add_observer(on_connected)
             .add_observer(on_disconnected)
-            .add_systems(Startup, (open_web_transport_server, open_web_socket_server))
             .add_event::<PlayerAuthenticated>();
 
         app.init_state::<ServerState>()
@@ -100,58 +92,6 @@ impl Plugin for ServerNetworkPlugin {
         app.add_systems(OnEnter(ServerState::Playing), setup_observers);
         app.add_systems(OnExit(ServerState::Playing), disconnect_players);
     }
-}
-
-// Listener setup for users
-
-fn open_web_transport_server(mut commands: Commands, args: Res<Args>) {
-    let identity = wtransport::Identity::self_signed(["localhost", "127.0.0.1", "::1"])
-        .expect("all given SANs should be valid DNS names");
-    let cert = &identity.certificate_chain().as_slice()[0];
-    let spki_fingerprint = cert::spki_fingerprint_b64(cert).expect("should be a valid certificate");
-    let cert_hash = cert::hash_to_b64(cert.hash());
-    info!("************************");
-    info!("SPKI FINGERPRINT");
-    info!("  {spki_fingerprint}");
-    info!("CERTIFICATE HASH");
-    info!("  {cert_hash}");
-    info!("************************");
-
-    let config = web_transport_config(identity, &args);
-    let server = commands
-        .spawn((Name::new("WebTransport Server"), AeronetRepliconServer))
-        .queue(WebTransportServer::open(config))
-        .id();
-    info!("Opening WebTransport server {server}");
-}
-
-type WebTransportServerConfig = aeronet_webtransport::server::ServerConfig;
-
-fn web_transport_config(identity: wtransport::Identity, args: &Args) -> WebTransportServerConfig {
-    WebTransportServerConfig::builder()
-        .with_bind_default(args.web_transport_port)
-        .with_identity(identity)
-        .keep_alive_interval(Some(Duration::from_secs(1)))
-        .max_idle_timeout(Some(Duration::from_secs(5)))
-        .expect("should be a valid idle timeout")
-        .build()
-}
-
-type WebSocketServerConfig = aeronet_websocket::server::ServerConfig;
-
-fn open_web_socket_server(mut commands: Commands, args: Res<Args>) {
-    let config = web_socket_config(&args);
-    let server = commands
-        .spawn((Name::new("WebSocket Server"), AeronetRepliconServer))
-        .queue(WebSocketServer::open(config))
-        .id();
-    info!("Opening WebSocket server {server}");
-}
-
-fn web_socket_config(args: &Args) -> WebSocketServerConfig {
-    WebSocketServerConfig::builder()
-        .with_bind_default(args.web_socket_port)
-        .with_no_encryption()
 }
 
 // Client setup for lobby server
