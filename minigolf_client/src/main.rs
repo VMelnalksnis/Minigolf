@@ -81,7 +81,7 @@ fn setup_level(mut commands: Commands) {
         Camera3d::default(),
         Transform::from_xyz(-2.5, 5.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
         TargetTransform::new(Transform::from_xyz(-2.5, 5.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y)),
-        Msaa::Sample8,
+        Msaa::Sample4, // WebGPU is only guaranteed to support 4
         ShadowFilteringMethod::Gaussian,
         MeshPickingCamera,
     ));
