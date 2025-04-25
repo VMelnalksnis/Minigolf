@@ -3,7 +3,7 @@ use {
     aeronet::io::{Session, bytes::Bytes},
     bevy::prelude::*,
     bevy_egui::{EguiContexts, egui},
-    minigolf::lobby::{LobbyId, UserClientPacket},
+    minigolf::lobby::{LobbyId, user::ClientPacket},
 };
 
 /// UI for creating/selecting a lobby
@@ -45,7 +45,7 @@ fn lobbies_ui(
                 info!("Joining lobby {}", lobbies_ui.lobby_id);
 
                 let mut session = lobby_session.single_mut().unwrap();
-                let request: String = UserClientPacket::JoinLobby(id).into();
+                let request: String = ClientPacket::JoinLobby(id).into();
                 session.send.push(Bytes::from(request));
             }
         });
@@ -54,7 +54,7 @@ fn lobbies_ui(
                 info!("Creating lobby");
 
                 let mut session = lobby_session.single_mut().unwrap();
-                let request: String = UserClientPacket::CreateLobby.into();
+                let request: String = ClientPacket::CreateLobby.into();
                 session.send.push(Bytes::from(request));
             }
         })

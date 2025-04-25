@@ -4,11 +4,10 @@ use {
         server::{Args, PlayerSession},
     },
     aeronet::{
-        io::bytes::Bytes,
-        io::connection::Disconnect,
         io::{
             Session,
-            connection::{Disconnected, LocalAddr},
+            bytes::Bytes,
+            connection::{Disconnect, Disconnected, LocalAddr},
             server::Server,
         },
         transport::AeronetTransportPlugin,
@@ -28,7 +27,10 @@ use {
     core::time::Duration,
     minigolf::{
         AuthenticatePlayer, Player, PlayerCredentials, RequestAuthentication,
-        lobby::{GameClientPacket, GameServerPacket, LobbyMember},
+        lobby::{
+            game::{ClientPacket, ServerPacket},
+            user::LobbyMember,
+        },
     },
 };
 
@@ -205,11 +207,11 @@ fn lobby_connection_messages(
     };
 
     for message in session.recv.drain(..) {
-        let server_packet = GameServerPacket::from(message.payload.as_ref());
+        let server_packet = ServerPacket::from(message.payload.as_ref());
         info!("{server_packet:?}");
 
         match server_packet {
-            GameServerPacket::Hello => {
+            ServerPacket::Hello => {
                 server_state.set(ServerState::WaitingForGame);
             }
 
@@ -262,7 +264,7 @@ fn inform_lobby_server(mut sessions: Query<&mut Session, With<WebSocketClient>>,
 
     let session = &mut *session;
     let address = args.get_publish_address();
-    let response: String = GameClientPacket::Available(address).into();
+    let response: String = ClientPacket::Available(address).into();
     session.send.push(Bytes::from_owner(response));
 }
 
@@ -283,11 +285,11 @@ fn game_setup_messages(
     let session = &mut *session;
 
     for message in session.recv.drain(..) {
-        let server_packet = GameServerPacket::from(message.payload.as_ref());
+        let server_packet = ServerPacket::from(message.payload.as_ref());
         info!("{server_packet:?}");
 
         match server_packet {
-            GameServerPacket::CreateGame(lobby_id, players) => {
+            ServerPacket::CreateGame(lobby_id, players) => {
                 for (player_id, player_credentials) in players.into_iter() {
                     commands.spawn((
                         Name::new("Player"),
@@ -328,7 +330,7 @@ fn setup_waiting_for_players(
 
     let lobby_id = lobby_members.iter().next().unwrap().lobby_id;
     let mut lobby_session = sessions.single_mut().unwrap();
-    let message: String = GameClientPacket::GameCreated(lobby_id).into();
+    let message: String = ClientPacket::GameCreated(lobby_id).into();
     lobby_session.send.push(Bytes::from_owner(message));
 }
 
@@ -460,7 +462,7 @@ fn on_connected(
         info!("Connected to {name}");
         let mut session = sessions.get_mut(client).unwrap();
 
-        let message: String = GameClientPacket::Hello.into();
+        let message: String = ClientPacket::Hello.into();
         session.send.push(Bytes::from_owner(message));
     } else {
         return;

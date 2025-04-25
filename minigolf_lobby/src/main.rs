@@ -1,12 +1,15 @@
 mod game;
 mod user;
 
-use minigolf::lobby::LobbyMember;
 use {
     crate::{game::GameServerPlugin, user::UserPlugin},
     aeronet_websocket::server::WebSocketServerPlugin,
     bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*},
     core::time::Duration,
+    minigolf::{
+        Player,
+        lobby::user::{LobbyMember, PlayerInLobby},
+    },
     std::net::{IpAddr, Ipv6Addr, SocketAddr},
 };
 
@@ -60,10 +63,17 @@ impl Lobby {
     }
 }
 
+#[derive(Event, Reflect, Deref, DerefMut, Debug)]
+struct PlayerJoinedLobby(PlayerInLobby);
+
+#[derive(Event, Reflect, Deref, DerefMut, Debug)]
+struct PlayerDisconnected(PlayerInLobby);
+
 fn on_lobby_member_removed(
     trigger: Trigger<OnRemove, LobbyMember>,
     members: Query<(Entity, &LobbyMember), Without<Lobby>>,
     lobby: Query<(Entity, &LobbyMember), With<Lobby>>,
+    players: Query<&Player>,
     mut commands: Commands,
 ) {
     let entity = trigger.target();
@@ -73,6 +83,10 @@ fn on_lobby_member_removed(
 
     let id = lobby_member.lobby_id;
     info!("{:?} left lobby {:?}", entity, id);
+
+    if let Ok(player) = players.get(entity) {
+        commands.trigger(PlayerDisconnected(PlayerInLobby::new(id, player.id)));
+    }
 
     let Some(lobby_entity) = lobby
         .iter()

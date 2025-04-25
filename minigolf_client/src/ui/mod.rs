@@ -1,5 +1,5 @@
 mod dev;
-mod lobby;
+pub(crate) mod lobby;
 mod lobby_select;
 pub(crate) mod lobby_server;
 mod power_ups;

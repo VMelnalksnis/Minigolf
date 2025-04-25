@@ -3,7 +3,7 @@ use {
     aeronet::io::{Session, bytes::Bytes},
     bevy::prelude::*,
     bevy_egui::{EguiContexts, egui},
-    minigolf::lobby::{PlayerId, UserClientPacket},
+    minigolf::lobby::{PlayerId, user::ClientPacket},
 };
 
 // UI for managing the current lobby
@@ -22,9 +22,35 @@ impl Plugin for LobbyUiPlugin {
 struct LobbyUiSet;
 
 #[derive(Resource, Reflect, Debug, Default)]
-struct LobbyUi {
+pub(crate) struct LobbyUi {
     lobby_id: String,
-    players: Vec<PlayerId>,
+    player_ids: Vec<PlayerId>,
+}
+
+impl LobbyUi {
+    pub(crate) fn new_lobby(lobby_id: String) -> Self {
+        LobbyUi {
+            lobby_id,
+            player_ids: vec![],
+        }
+    }
+
+    pub(crate) fn new_existing_lobby(lobby_id: String, player_ids: Vec<PlayerId>) -> Self {
+        LobbyUi {
+            lobby_id,
+            player_ids,
+        }
+    }
+
+    pub(crate) fn add_player(&mut self, player: PlayerId) {
+        info!("Player joined current lobby {:?}", player);
+        self.player_ids.push(player);
+    }
+
+    pub(crate) fn remove_player(&mut self, player: PlayerId) {
+        info!("Player left current lobby {:?}", player);
+        self.player_ids.retain(|p| *p != player);
+    }
 }
 
 fn lobby_ui(
@@ -33,15 +59,18 @@ fn lobby_ui(
     mut lobby_session: Query<&mut Session, With<LobbyServerSession>>,
     mut state: ResMut<NextState<ServerState>>,
 ) {
-    let title = format!("Lobby {}", lobby_ui.lobby_id);
+    egui::Window::new("Lobby").show(context.ctx_mut(), |ui| {
+        ui.horizontal(|ui| {
+            ui.label(format!("Lobby ID: {}", lobby_ui.lobby_id));
+        });
+        ui.separator();
 
-    egui::Window::new(title).show(context.ctx_mut(), |ui| {
         ui.horizontal(|ui| {
             if ui.button("Start game").clicked() {
                 info!("Starting game");
 
                 let mut session = lobby_session.single_mut().unwrap();
-                let request: String = UserClientPacket::StartGame.into();
+                let request: String = ClientPacket::StartGame.into();
                 session.send.push(Bytes::from(request));
             }
 
@@ -49,10 +78,16 @@ fn lobby_ui(
                 info!("Leaving lobby");
 
                 let mut session = lobby_session.single_mut().unwrap();
-                let request: String = UserClientPacket::LeaveLobby.into();
+                let request: String = ClientPacket::LeaveLobby.into();
                 session.send.push(Bytes::from(request));
                 state.set(ServerState::Lobbies);
             }
-        })
+        });
+        ui.separator();
+
+        ui.label("Players");
+        for player in &lobby_ui.player_ids {
+            ui.label(format!("{player:?}"));
+        }
     });
 }

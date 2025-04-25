@@ -1,10 +1,14 @@
 use {
     crate::Args,
-    aeronet::{io::Session, io::bytes::Bytes, io::connection::LocalAddr, io::server::Server},
+    aeronet::io::{Session, bytes::Bytes, connection::LocalAddr, server::Server},
     aeronet_websocket::server::{ServerConfig, WebSocketServer},
     bevy::prelude::*,
     minigolf::{
-        lobby::{GameClientPacket, GameServerPacket, LobbyId, LobbyMember},
+        lobby::{
+            LobbyId,
+            game::{ClientPacket, ServerPacket},
+            user::LobbyMember,
+        },
         {Player, PlayerCredentials},
     },
 };
@@ -14,15 +18,18 @@ pub(super) struct GameServerPlugin;
 
 impl Plugin for GameServerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, open_listener)
-            .add_observer(on_opened)
-            .add_observer(on_connected)
-            .add_observer(on_game_server_added)
-            .add_observer(on_game_server_removed)
-            .add_systems(Update, handle_messages)
-            .add_event::<StartGame>()
-            .add_systems(PostUpdate, start_game)
-            .add_event::<GameStarted>();
+        app.add_systems(Startup, open_listener);
+
+        app.add_observer(on_opened);
+        app.add_observer(on_connected);
+        app.add_observer(on_game_server_added);
+        app.add_observer(on_game_server_removed);
+
+        app.add_systems(Update, handle_messages);
+        app.add_systems(PostUpdate, start_game);
+
+        app.add_event::<StartGame>();
+        app.add_event::<GameStarted>();
     }
 }
 
@@ -93,26 +100,26 @@ fn handle_messages(
         let session = &mut *session;
 
         for message in session.recv.drain(..) {
-            let client_packet = GameClientPacket::from(message.payload.as_ref());
+            let client_packet = ClientPacket::from(message.payload.as_ref());
             info!("{client_packet:?}");
 
             match &client_packet {
-                GameClientPacket::Hello => {
-                    let response: String = GameServerPacket::Hello.into();
+                ClientPacket::Hello => {
+                    let response: String = ServerPacket::Hello.into();
                     session.send.push(Bytes::from_owner(response));
                 }
 
-                GameClientPacket::Available(game_server_address) => {
+                ClientPacket::Available(game_server_address) => {
                     commands.entity(server_entity).insert(GameServer {
                         address: game_server_address.clone(),
                     });
                 }
 
-                GameClientPacket::Busy => {
+                ClientPacket::Busy => {
                     commands.entity(server_entity).remove::<GameServer>();
                 }
 
-                GameClientPacket::GameCreated(lobby_id) => {
+                ClientPacket::GameCreated(lobby_id) => {
                     let server = game_servers.get(server_entity).unwrap();
                     game_started_writer.write(GameStarted {
                         lobby_id: *lobby_id,
@@ -122,7 +129,7 @@ fn handle_messages(
             }
 
             match client_packet {
-                GameClientPacket::Available(_) => {}
+                ClientPacket::Available(_) => {}
                 _ => {
                     commands.entity(server_entity).remove::<GameServer>();
                 }
@@ -177,7 +184,7 @@ fn start_game(
                 .map(|(_, player, credentials)| (player.id, credentials.clone()))
                 .collect();
 
-            let message: String = GameServerPacket::CreateGame(start_game.lobby_id, players).into();
+            let message: String = ServerPacket::CreateGame(start_game.lobby_id, players).into();
 
             info!("Sending message {:?}", message);
             server.send.push(Bytes::from_owner(message));

@@ -1,5 +1,5 @@
 use {
-    crate::ui::{ServerState, lobby_server::LobbyServerSession},
+    crate::ui::{ServerState, lobby::LobbyUi, lobby_server::LobbyServerSession},
     aeronet::io::{Session, SessionEndpoint, connection::Disconnected},
     aeronet_replicon::client::{AeronetRepliconClient, AeronetRepliconClientPlugin},
     aeronet_websocket::client::{WebSocketClient, WebSocketClientPlugin},
@@ -11,7 +11,7 @@ use {
     bevy_replicon::prelude::*,
     minigolf::{
         AuthenticatePlayer, PlayerCredentials, RequestAuthentication,
-        lobby::{PlayerId, UserServerPacket},
+        lobby::{PlayerId, user::ServerPacket},
     },
 };
 
@@ -141,6 +141,7 @@ fn on_disconnected(
 fn handle_lobby_server_packets(
     mut sessions: Query<&mut Session, With<LobbyServerSession>>,
     mut server_state: ResMut<NextState<ServerState>>,
+    mut lobby_ui: ResMut<LobbyUi>,
     mut commands: Commands,
 ) {
     let Ok(mut lobby_session) = sessions.single_mut() else {
@@ -148,28 +149,38 @@ fn handle_lobby_server_packets(
     };
 
     for received_packet in lobby_session.recv.drain(..) {
-        let packet = UserServerPacket::from(received_packet.payload.as_ref());
+        let packet = ServerPacket::from(received_packet.payload.as_ref());
         info!("Lobby packet received: {:?}", packet);
 
         match packet {
-            UserServerPacket::Hello(id, credentials) => {
+            ServerPacket::Hello(id, credentials) => {
                 commands.insert_resource(Authentication::new(id, credentials));
             }
-            UserServerPacket::LobbyCreated(_) => {
+
+            ServerPacket::LobbyCreated(lobby_id) => {
                 server_state.set(ServerState::Lobby);
+
+                commands.insert_resource::<LobbyUi>(LobbyUi::new_lobby(lobby_id.to_string()));
             }
-            UserServerPacket::AvailableLobbies(_) => {}
-            UserServerPacket::LobbyJoined(_) => {
+
+            ServerPacket::AvailableLobbies(_) => {}
+
+            ServerPacket::LobbyJoined(lobby_id, player_ids) => {
                 server_state.set(ServerState::Lobby);
+
+                let ui = LobbyUi::new_existing_lobby(lobby_id.to_string(), player_ids);
+                commands.insert_resource::<LobbyUi>(ui);
             }
-            UserServerPacket::GameStarted(server) => {
+
+            ServerPacket::GameStarted(server) => {
                 server_state.set(ServerState::GameServer);
 
                 #[cfg(target_family = "wasm")]
                 let config = aeronet_websocket::client::ClientConfig::default();
 
                 #[cfg(not(target_family = "wasm"))]
-                let config = aeronet_websocket::client::ClientConfig::builder().with_no_cert_validation();
+                let config =
+                    aeronet_websocket::client::ClientConfig::builder().with_no_cert_validation();
                 commands
                     .spawn((
                         Name::new(format!("Game server {server}")),
@@ -177,8 +188,14 @@ fn handle_lobby_server_packets(
                     ))
                     .queue(WebSocketClient::connect(config, server));
             }
-            UserServerPacket::PlayerJoined(_) => {}
-            UserServerPacket::PlayerLeft(_) => {}
+
+            ServerPacket::PlayerJoined(player) => {
+                lobby_ui.add_player(player.player_id);
+            }
+
+            ServerPacket::PlayerLeft(player) => {
+                lobby_ui.remove_player(player.player_id);
+            }
         }
     }
 }
