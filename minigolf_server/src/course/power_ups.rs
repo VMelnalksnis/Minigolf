@@ -5,7 +5,7 @@ use {
         server::{LastPlayerPosition, ValidPlayerInput},
     },
     avian3d::prelude::*,
-    bevy::prelude::*,
+    bevy::{math::DVec3, prelude::*},
     minigolf::{Player, PlayerInput, PlayerPowerUps, PowerUp},
 };
 
@@ -25,7 +25,6 @@ impl Plugin for PowerUpPlugin {
             FixedUpdate,
             (
                 handle_power_up_sensors,
-                apply_sticky,
                 apply_hole_magnet,
                 remove_hole_magnet,
             )
@@ -39,6 +38,12 @@ fn setup_observers(mut commands: Commands) {
         Name::new("Remove sticky ball observer"),
         StateScoped(ServerState::Playing),
         Observer::new(remove_sticky_ball),
+    ));
+
+    commands.spawn((
+        Name::new("Apply sticky effects observer"),
+        StateScoped(ServerState::Playing),
+        Observer::new(on_player_collided),
     ));
 }
 
@@ -69,9 +74,11 @@ fn apply_power_ups(
                 let direction = direction.normalize();
                 let force = Vec3::new(direction.x, 0.0, direction.y) * WIND_POWER_UP_STRENGTH;
 
-                for player in players.iter() {
-                    commands.entity(player).insert(ExternalForce::new(force));
-                }
+                players.iter().for_each(|player| {
+                    commands
+                        .entity(player)
+                        .insert(ExternalForce::new(DVec3::from(force)));
+                });
             }
 
             PlayerInput::StickyWalls => {
@@ -161,7 +168,7 @@ fn apply_hole_magnet(
         let force = vector.normalize() * time.delta_secs() * 50.0;
         commands
             .entity(player)
-            .insert(ExternalForce::new(force).with_persistence(false));
+            .insert(ExternalForce::new(DVec3::from(force)).with_persistence(false));
     }
 }
 
@@ -187,60 +194,42 @@ struct StickyWalls;
 #[derive(Component, Reflect)]
 pub(crate) struct StickyBall;
 
-fn apply_sticky(
-    collisions: Collisions,
-    walls: Query<Entity, With<HoleWalls>>,
+fn on_player_collided(
+    trigger: Trigger<OnCollisionStart>,
+    walls: Query<(), With<HoleWalls>>,
     sticky_walls: Query<(), (With<HoleWalls>, With<StickyWalls>)>,
-    players: Query<(Entity, &Player)>,
+    players: Query<&Player>,
     sticky_players: Query<(), (With<Player>, With<StickyBall>)>,
     mut velocities: Query<(&mut LinearVelocity, &mut AngularVelocity)>,
+    mut commands: Commands,
 ) {
-    let walls = walls.iter().collect::<Vec<_>>();
+    let player_entity = trigger.target();
+    let Ok(player) = players.get(trigger.target()) else {
+        return;
+    };
 
-    // todo: broken in latest avian version
-    for contact_pair in collisions.iter().filter(|c| !c.is_sensor()) {
-        let Some(player_entity) = find_entity(
-            &players.iter().map(|(e, _)| e).collect::<Vec<_>>(),
-            contact_pair,
-        ) else {
-            continue;
-        };
-
-        let Some(walls_entity) = find_entity(&walls, contact_pair) else {
-            continue;
-        };
-
-        if sticky_walls.get(walls_entity).is_err() && sticky_players.get(player_entity).is_err() {
-            continue;
-        }
-
-        let Ok((_, player)) = players.get(player_entity) else {
-            continue;
-        };
-
-        if player.can_move {
-            continue;
-        }
-
-        info!(
-            "Applying sticky effect for player {:?}, walls {:?} with contacts {:?}",
-            player_entity, walls_entity, contact_pair
-        );
-
-        let (mut linear, mut angular) = velocities.get_mut(player_entity).unwrap();
-        linear.0 = Vec3::ZERO;
-        angular.0 = Vec3::ZERO;
+    if player.can_move {
+        return;
     }
-}
 
-fn find_entity(entities: &Vec<Entity>, contacts: &ContactPair) -> Option<Entity> {
-    if entities.contains(&contacts.entity1) {
-        Some(contacts.entity1)
-    } else if entities.contains(&contacts.entity2) {
-        Some(contacts.entity2)
-    } else {
-        None
+    let other_entity = trigger.0;
+    let Ok(_) = walls.get(other_entity) else {
+        return;
+    };
+
+    if sticky_walls.get(other_entity).is_err() && sticky_players.get(player_entity).is_err() {
+        return;
     }
+
+    info!(
+        "Applying sticky effect for player {:?}, walls {:?}",
+        player_entity, other_entity
+    );
+
+    commands.entity(player_entity).insert(Sleeping);
+    let (mut linear, mut angular) = velocities.get_mut(player_entity).unwrap();
+    linear.0 = DVec3::ZERO;
+    angular.0 = DVec3::ZERO;
 }
 
 fn remove_sticky_ball(

@@ -7,7 +7,7 @@ use {
     },
     aeronet::io::connection::Disconnected,
     avian3d::prelude::*,
-    bevy::prelude::*,
+    bevy::{math::DVec3, prelude::*},
     bevy_replicon::{prelude::*, server::increment_tick},
     minigolf::{MinigolfPlugin, Player, PlayerInput, PlayerPowerUps},
     std::{
@@ -89,10 +89,12 @@ pub fn main() -> AppExit {
         .add_plugins(CoursePlugin)
         .add_observer(on_disconnected)
         .insert_resource(Time::<Fixed>::from_hz(128.0))
-        .insert_resource(SubstepCount(24))
-        .insert_resource::<DeactivationTime>(DeactivationTime(0.2))
-        .insert_resource::<SleepingThreshold>(SleepingThreshold {
-            angular: 1.0,
+        .insert_resource(SubstepCount(8))
+        .insert_resource(PhysicsLengthUnit(0.005))
+        .insert_resource(DeactivationTime(0.2))
+        .insert_resource(SleepingThreshold {
+            angular: 10.0,
+            linear: 1.0,
             ..default()
         })
         .add_systems(FixedPreUpdate, increment_tick)
@@ -188,7 +190,7 @@ fn move_player(mut reader: EventReader<ValidPlayerInput>, mut commands: Commands
 
         commands
             .entity(player)
-            .insert(ExternalImpulse::new(force_vec));
+            .insert(ExternalImpulse::new(DVec3::from(force_vec)));
     }
 }
 
@@ -248,13 +250,12 @@ fn on_player_authenticated(
             CollisionLayers::new(GameLayer::Player, [GameLayer::Default]),
             Mass::from(0.04593),
             Transform::from_translation(initial_position),
-            Friction::new(0.8)
-                .with_dynamic_coefficient(0.2)
-                .with_combine_rule(CoefficientCombine::Multiply),
-            Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
-            AngularDamping(3.0),
+            Friction::new(0.2),
+            Restitution::new(0.99),
+            AngularDamping(1.0),
+            LinearDamping(0.5),
             SweptCcd::default(),
-            SpeculativeMargin(0.0),
+            CollisionEventsEnabled,
         ));
 
         commands

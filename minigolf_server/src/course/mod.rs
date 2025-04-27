@@ -7,7 +7,7 @@ use {
         server::{GameLayer, LastPlayerPosition, ValidPlayerInput},
     },
     avian3d::prelude::*,
-    bevy::{app::App, math::Vec3, prelude::*},
+    bevy::{app::App, math::DVec3, prelude::*},
     bevy_replicon::prelude::*,
     minigolf::{LevelMesh, Player, PlayerInput, PowerUp, PowerUpType},
     rand::Rng,
@@ -180,8 +180,8 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
                 RigidBody::Static,
                 ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
                 CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
-                Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
-                Restitution::new(0.7).with_combine_rule(CoefficientCombine::Multiply),
+                Friction::new(0.9),
+                Restitution::new(0.1),
             ))
             .insert(ChildOf(course))
             .id();
@@ -198,7 +198,7 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
                 ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
                 CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
                 Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
-                Restitution::new(1.0).with_combine_rule(CoefficientCombine::Max),
+                Restitution::new(0.9).with_combine_rule(CoefficientCombine::Max),
             ))
             .insert(ChildOf(hole));
 
@@ -374,8 +374,8 @@ fn handle_hole_bounding_box(
                 let (mut transform, mut linear, mut angular, last) =
                     transforms.get_mut(player_entity).unwrap();
 
-                linear.0 = Vec3::ZERO;
-                angular.0 = Vec3::ZERO;
+                linear.0 = DVec3::ZERO;
+                angular.0 = DVec3::ZERO;
 
                 info!("Last position: {last:?}");
                 // todo: ball rolls off the edge when last position set close to it, even though it was stable before respawning
