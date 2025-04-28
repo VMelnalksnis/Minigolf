@@ -27,6 +27,7 @@ impl Plugin for CoursePlugin {
             .register_type::<PlayerScore>();
 
         app.register_type::<Bumper>();
+        app.register_type::<JumpPad>();
 
         app.add_observer(on_hole_added);
 
@@ -147,6 +148,10 @@ pub(crate) struct PlayingSet;
 #[derive(Component, Reflect, Debug)]
 pub(crate) struct Bumper;
 
+/// Component for identifying jump pad entities.
+#[derive(Component, Reflect, Debug)]
+pub(crate) struct JumpPad;
+
 fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
     let scene = commands
         .spawn((Name::new("Scene"), SceneRoot::default(), Replicated))
@@ -218,7 +223,7 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
                 HoleBoundingBox::new(hole),
                 RigidBody::Static,
                 CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-                Collider::cuboid(4.0, 2.0, 3.0),
+                Collider::cuboid(4.0, 4.0, 3.0),
                 CollidingEntities::default(),
             ))
             .insert(ChildOf(hole));
@@ -266,12 +271,26 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
                 bumper_path.to_string(),
             ))
             .insert(ChildOf(hole));
+
+        commands
+            .spawn(jump_pad_bundle(Transform::from_xyz(
+                -offset + 2.0,
+                0.05,
+                0.0,
+            )))
+            .insert(ChildOf(hole));
     }
 
     commands.spawn((
         Name::new("Bumper collision observer"),
         StateScoped(ServerState::Playing),
         Observer::new(on_bumper_collision),
+    ));
+
+    commands.spawn((
+        Name::new("Jump pad collision observer"),
+        StateScoped(ServerState::Playing),
+        Observer::new(on_jump_pad_collision),
     ));
 }
 
@@ -303,6 +322,20 @@ fn bumper_bundle(transform: Transform, asset: String) -> impl Bundle {
     )
 }
 
+fn jump_pad_bundle(transform: Transform) -> impl Bundle {
+    (
+        Name::new("Jump pad"),
+        JumpPad,
+        transform,
+        RigidBody::Static,
+        Collider::cylinder(0.085344, 0.05),
+        CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
+        Sensor,
+        Replicated,
+        CollisionEventsEnabled,
+    )
+}
+
 const BUMPER_STRENGTH: f64 = 0.1;
 
 fn on_bumper_collision(
@@ -321,6 +354,7 @@ fn on_bumper_collision(
         return;
     };
 
+    // todo: probably should handle collisions from above differently
     let direction = (player_position.0 - bumper_position.0).normalize();
 
     info!(
@@ -331,6 +365,36 @@ fn on_bumper_collision(
     commands
         .entity(other_entity)
         .insert(ExternalImpulse::new(direction * BUMPER_STRENGTH).with_persistence(false));
+}
+
+const JUMP_PAD_STRENGTH: f64 = 0.2;
+
+fn on_jump_pad_collision(
+    trigger: Trigger<OnCollisionStart>,
+    jump_pads: Query<(), With<JumpPad>>,
+    players: Query<(), With<Player>>,
+    mut commands: Commands,
+) {
+    let jump_pad_entity = trigger.target();
+    let Ok(_) = jump_pads.get(jump_pad_entity) else {
+        return;
+    };
+
+    let other_entity = trigger.0;
+    let Ok(_) = players.get(other_entity) else {
+        return;
+    };
+
+    let direction = DVec3::Y;
+
+    info!(
+        "Applying jump pad effect to player {:?} in direction {:?}",
+        other_entity, direction
+    );
+
+    commands
+        .entity(other_entity)
+        .insert(ExternalImpulse::new(direction * JUMP_PAD_STRENGTH).with_persistence(false));
 }
 
 fn on_hole_added(
