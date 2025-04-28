@@ -26,6 +26,8 @@ impl Plugin for CoursePlugin {
             .register_type::<HoleWalls>()
             .register_type::<PlayerScore>();
 
+        app.register_type::<Bumper>();
+
         app.add_observer(on_hole_added);
 
         app.add_systems(OnEnter(ServerState::WaitingForPlayers), setup_course);
@@ -141,6 +143,10 @@ pub(crate) struct CurrentHole {
 #[derive(SystemSet, Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct PlayingSet;
 
+/// Component for identifying bumper entities.
+#[derive(Component, Reflect, Debug)]
+pub(crate) struct Bumper;
+
 fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
     let scene = commands
         .spawn((Name::new("Scene"), SceneRoot::default(), Replicated))
@@ -162,6 +168,8 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
 
     let walls_path = "Course1.glb#Mesh3/Primitive0";
     let walls_handle: Handle<Mesh> = server.load(walls_path);
+
+    let bumper_path = "Entities.glb#Mesh1/Primitive0";
 
     for index in 0..2 {
         let offset = 2.4;
@@ -253,13 +261,18 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
             .insert(ChildOf(hole));
 
         commands
-            .spawn(power_up_bundle(Transform::from_xyz(
-                -offset + 0.0,
-                0.05,
-                -0.8,
-            )))
+            .spawn(bumper_bundle(
+                Transform::from_xyz(-offset + 0.0, 0.025, -0.8),
+                bumper_path.to_string(),
+            ))
             .insert(ChildOf(hole));
     }
+
+    commands.spawn((
+        Name::new("Bumper collision observer"),
+        StateScoped(ServerState::Playing),
+        Observer::new(on_bumper_collision),
+    ));
 }
 
 fn power_up_bundle(transform: Transform) -> impl Bundle {
@@ -274,6 +287,50 @@ fn power_up_bundle(transform: Transform) -> impl Bundle {
         PowerUp::from(rand::rng().random::<PowerUpType>()),
         Replicated,
     )
+}
+
+fn bumper_bundle(transform: Transform, asset: String) -> impl Bundle {
+    (
+        Name::new("Bumper"),
+        Bumper,
+        transform,
+        RigidBody::Static,
+        Collider::cylinder(0.042672, 0.05),
+        CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
+        Replicated,
+        LevelMesh { asset },
+        CollisionEventsEnabled,
+    )
+}
+
+const BUMPER_STRENGTH: f64 = 0.1;
+
+fn on_bumper_collision(
+    trigger: Trigger<OnCollisionStart>,
+    bumpers: Query<&Position, With<Bumper>>,
+    players: Query<&Position, With<Player>>,
+    mut commands: Commands,
+) {
+    let bumper_entity = trigger.target();
+    let Ok(bumper_position) = bumpers.get(bumper_entity) else {
+        return;
+    };
+
+    let other_entity = trigger.0;
+    let Ok(player_position) = players.get(other_entity) else {
+        return;
+    };
+
+    let direction = (player_position.0 - bumper_position.0).normalize();
+
+    info!(
+        "Applying bumper effect to player {:?} in direction {:?}",
+        other_entity, direction
+    );
+
+    commands
+        .entity(other_entity)
+        .insert(ExternalImpulse::new(direction * BUMPER_STRENGTH).with_persistence(false));
 }
 
 fn on_hole_added(
