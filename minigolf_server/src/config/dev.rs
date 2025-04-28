@@ -1,4 +1,7 @@
-use {crate::config::ServerPlugin, bevy::prelude::*, bevy_egui::EguiPlugin};
+use {
+    crate::config::ServerPlugin, bevy::prelude::*, bevy_egui::EguiPlugin,
+    bevy_inspector_egui::quick::WorldInspectorPlugin,
+};
 
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
@@ -6,6 +9,7 @@ impl Plugin for ServerPlugin {
             .add_plugins(EguiPlugin {
                 enable_multipass_for_primary_context: false,
             })
+            .add_plugins(WorldInspectorPlugin::new())
             .add_systems(Startup, setup);
     }
 }

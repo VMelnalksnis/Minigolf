@@ -20,5 +20,8 @@ bevy_replicon = { workspace = true, features = ["server"] }
 aeronet_replicon = { workspace = true, features = ["server"] }
 rand = { workspace = true }
 
+bevy_egui = { workspace = true, optional = true }
+bevy-inspector-egui = { workspace = true, optional = true }
+
 [features]
-ui = []
+ui = ["bevy_egui", "bevy-inspector-egui"]
