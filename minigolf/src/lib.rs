@@ -34,6 +34,8 @@ impl Plugin for MinigolfPlugin {
             .register_type::<PowerUp>()
             .register_type::<PlayerPowerUps>();
 
+        app.register_type::<PlayerScore>();
+
         app.init_state::<GameState>()
             .enable_state_scoped_entities::<GameState>();
 
@@ -44,6 +46,8 @@ impl Plugin for MinigolfPlugin {
             .replicate::<Transform>()
             .replicate::<LevelMesh>()
             .replicate::<Name>();
+
+        app.replicate::<PlayerScore>();
 
         app.add_client_event::<AuthenticatePlayer>(Channel::Ordered)
             .add_client_event::<PlayerInput>(Channel::Ordered)
@@ -174,6 +178,11 @@ pub struct AuthenticatePlayer {
 
 #[derive(Debug, Clone, Event, Serialize, Deserialize, Reflect)]
 pub struct RequestAuthentication;
+
+#[derive(Component, Reflect, Serialize, Deserialize, Default, Debug)]
+pub struct PlayerScore {
+    pub score: u32,
+}
 
 const PLAYER_POWER_UP_LIMIT: usize = 3;
 

@@ -9,7 +9,7 @@ use {
     avian3d::prelude::*,
     bevy::{app::App, math::DVec3, prelude::*},
     bevy_replicon::prelude::*,
-    minigolf::{LevelMesh, Player, PlayerInput, PowerUp, PowerUpType},
+    minigolf::{LevelMesh, Player, PlayerInput, PlayerScore, PowerUp, PowerUpType},
     rand::Rng,
 };
 
@@ -23,8 +23,7 @@ impl Plugin for CoursePlugin {
             .register_type::<Hole>()
             .register_type::<HoleSensor>()
             .register_type::<HoleBoundingBox>()
-            .register_type::<HoleWalls>()
-            .register_type::<PlayerScore>();
+            .register_type::<HoleWalls>();
 
         app.register_type::<Bumper>();
         app.register_type::<JumpPad>();
@@ -127,11 +126,6 @@ impl HoleBoundingBox {
 #[derive(Component, Reflect, Debug)]
 struct HoleWalls {
     hole_entity: Entity,
-}
-
-#[derive(Component, Reflect, Default, Debug)]
-pub(crate) struct PlayerScore {
-    score: u32,
 }
 
 #[derive(Resource)]

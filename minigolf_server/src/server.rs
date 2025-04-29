@@ -2,14 +2,14 @@ use {
     crate::{
         ServerState,
         config::ServerPlugin,
-        course::{CoursePlugin, CurrentHole, HoleSensor, PlayerScore},
+        course::{CoursePlugin, CurrentHole, HoleSensor},
         network::{PlayerAuthenticated, ServerNetworkPlugin},
     },
     aeronet::io::connection::Disconnected,
     avian3d::prelude::*,
     bevy::{math::DVec3, prelude::*},
     bevy_replicon::{prelude::*, server::increment_tick},
-    minigolf::{MinigolfPlugin, Player, PlayerInput, PlayerPowerUps},
+    minigolf::{MinigolfPlugin, Player, PlayerInput, PlayerPowerUps, PlayerScore},
     std::{
         net::{IpAddr, Ipv6Addr, SocketAddr},
         path::PathBuf,

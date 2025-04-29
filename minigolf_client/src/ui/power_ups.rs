@@ -1,9 +1,8 @@
-use minigolf::{PlayerInput, PowerUpType};
 use {
     crate::{LocalPlayer, ui::ServerState},
     bevy::prelude::*,
     bevy_egui::{EguiContexts, egui},
-    minigolf::PlayerPowerUps,
+    minigolf::{Player, PlayerInput, PlayerPowerUps, PlayerScore, PowerUpType},
 };
 
 /// UI for displaying and interacting with power ups
@@ -15,12 +14,24 @@ impl Plugin for PowerUpUiPlugin {
             Update,
             PowerUpUiSet.run_if(in_state(ServerState::GameServer)),
         )
-        .add_systems(Update, power_up_ui.in_set(PowerUpUiSet));
+        .add_systems(Update, (power_up_ui, score_board).in_set(PowerUpUiSet));
     }
 }
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 struct PowerUpUiSet;
+
+fn score_board(mut context: EguiContexts, scores: Query<(&Player, &PlayerScore)>) {
+    egui::Window::new("Scoreboard").show(context.ctx_mut(), |ui| {
+        ui.vertical(|ui| {
+            for (player, score) in scores {
+                ui.horizontal(|ui| {
+                    ui.label(format!("Player \"{:?}\": {:?}", player.id, score.score));
+                });
+            }
+        })
+    });
+}
 
 fn power_up_ui(
     mut context: EguiContexts,
@@ -44,7 +55,7 @@ fn power_up_ui(
                             PowerUpType::HoleMagnet => {
                                 writer.write(PlayerInput::HoleMagnet);
                             }
-                            
+
                             PowerUpType::StickyBall => {
                                 writer.write(PlayerInput::StickyBall);
                             }
