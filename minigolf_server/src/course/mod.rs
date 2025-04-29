@@ -11,6 +11,7 @@ use {
     bevy_replicon::prelude::*,
     minigolf::{LevelMesh, Player, PlayerInput, PlayerScore, PowerUp, PowerUpType},
     rand::Rng,
+    std::f32::consts::PI,
 };
 
 pub(crate) struct CoursePlugin;
@@ -162,118 +163,131 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
         .insert(ChildOf(scene))
         .id();
 
-    let floor_path = "Course1.glb#Mesh4/Primitive0";
-    let floor_handle: Handle<Mesh> = server.load(floor_path);
-
-    let walls_path = "Course1.glb#Mesh3/Primitive0";
-    let walls_handle: Handle<Mesh> = server.load(walls_path);
-
     let bumper_path = "Entities.glb#Mesh1/Primitive0";
 
-    for index in 0..2 {
-        let offset = 2.4;
-        let x_offset = offset + index as f32 * 4.0;
+    let floor_1_path = "Course2.glb#Mesh0/Primitive0";
+    let floor_1_handle: Handle<Mesh> = server.load(floor_1_path);
+    let walls_1_path = "Course2.glb#Mesh1/Primitive0";
+    let walls_1_handle: Handle<Mesh> = server.load(walls_1_path);
 
-        let hole = commands
-            .spawn((
-                Name::new(format!("Hole {index}")),
-                Hole {
-                    start_position: Vec3::new(x_offset, 0.5, 0.0),
-                },
-                Transform::from_xyz(x_offset + offset, 0.0, 0.0),
-                Replicated,
-                Mesh3d(floor_handle.clone()),
-                LevelMesh::from_path(floor_path),
-                RigidBody::Static,
-                ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
-                CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
-                Friction::new(0.9),
-                Restitution::new(0.1),
-            ))
-            .insert(ChildOf(course))
-            .id();
+    let hole_1 = commands
+        .spawn(hole_bundle(
+            "Hole 1".to_string(),
+            course,
+            Vec3::new(0.0, 0.5, 0.0),
+            Transform::from_xyz(0.0, 0.0, 0.0),
+            floor_1_path,
+            floor_1_handle,
+        ))
+        .id();
 
-        commands
-            .spawn((
-                Name::new(format!("Hole {index} walls")),
-                Transform::from_xyz(-offset, 0.0, 0.0),
-                HoleWalls { hole_entity: hole },
-                Replicated,
-                Mesh3d(walls_handle.clone()),
-                LevelMesh::from_path(walls_path),
-                RigidBody::Static,
-                ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
-                CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
-                Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
-                Restitution::new(0.9).with_combine_rule(CoefficientCombine::Max),
-            ))
-            .insert(ChildOf(hole));
+    commands.spawn(hole_walls_bundle(
+        "Hole 1 walls".to_string(),
+        hole_1,
+        walls_1_path,
+        walls_1_handle,
+    ));
 
-        commands
-            .spawn((
-                Name::new(format!("Hole {index} bounding box")),
-                Transform::from_xyz(-offset + 1.0, 0.2, 0.0),
-                Sensor,
-                HoleBoundingBox::new(hole),
-                RigidBody::Static,
-                CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-                Collider::cuboid(4.0, 4.0, 3.0),
-                CollidingEntities::default(),
-            ))
-            .insert(ChildOf(hole));
+    commands.spawn(hole_bounding_box_bundle(
+        "Hole 1 bounding box".to_string(),
+        hole_1,
+        Transform::from_xyz(0.6, 0.2, 0.0),
+        Collider::cuboid(2.0, 4.0, 0.8),
+    ));
 
-        commands
-            .spawn((
-                Name::new(format!("Hole {index} sensor")),
-                Transform::from_xyz(-offset + 2.4, -0.05, 0.0),
-                Sensor,
-                HoleSensor::new(hole),
-                RigidBody::Static,
-                CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-                Collider::cuboid(0.2, 0.09, 0.2),
-                CollidingEntities::default(),
-            ))
-            .insert(ChildOf(hole));
+    commands.spawn(hole_sensor_bundle(
+        "Hole 1 sensor".to_string(),
+        hole_1,
+        Transform::from_xyz(1.2, -0.05, 0.0),
+    ));
 
-        commands
-            .spawn(power_up_bundle(Transform::from_xyz(
-                -offset + 1.2,
-                0.15,
-                0.0,
-            )))
-            .insert(ChildOf(hole));
+    commands.spawn(power_up_bundle(
+        hole_1,
+        Transform::from_xyz(0.8, 0.025, 0.0),
+    ));
 
-        commands
-            .spawn(power_up_bundle(Transform::from_xyz(
-                -offset + 1.2,
-                0.05,
-                0.8,
-            )))
-            .insert(ChildOf(hole));
+    let floor_2_path = "Course2.glb#Mesh2/Primitive0";
+    let floor_2_handle: Handle<Mesh> = server.load(floor_2_path);
+    let walls_2_path = "Course2.glb#Mesh3/Primitive0";
+    let walls_2_handle: Handle<Mesh> = server.load(walls_2_path);
 
-        commands
-            .spawn(power_up_bundle(Transform::from_xyz(
-                -offset + 0.0,
-                0.05,
-                0.8,
-            )))
-            .insert(ChildOf(hole));
+    let hole_02 = commands
+        .spawn(hole_bundle(
+            "Hole 2".to_string(),
+            course,
+            Vec3::new(2.0, 0.5, 0.0),
+            Transform::from_xyz(2.0, 0.0, 0.0),
+            floor_2_path,
+            floor_2_handle,
+        ))
+        .id();
 
-        commands
-            .spawn(bumper_bundle(
-                Transform::from_xyz(-offset + 0.0, 0.025, -0.8),
-                bumper_path.to_string(),
-            ))
-            .insert(ChildOf(hole));
+    commands.spawn(hole_walls_bundle(
+        "Hole 2 walls".to_string(),
+        hole_02,
+        walls_2_path,
+        walls_2_handle,
+    ));
 
-        commands
-            .spawn(jump_pad_bundle(Transform::from_xyz(
-                -offset + 2.0,
-                0.05,
-                0.0,
-            )))
-            .insert(ChildOf(hole));
-    }
+    commands.spawn(hole_bounding_box_bundle(
+        "Hole 2 bounding box".to_string(),
+        hole_02,
+        Transform::from_xyz(1.0, 0.2, -0.2),
+        Collider::cuboid(3.0, 4.0, 1.2),
+    ));
+
+    commands.spawn(hole_sensor_bundle(
+        "Hole 2 sensor".to_string(),
+        hole_02,
+        Transform::from_xyz(2.0, -0.05, 0.0),
+    ));
+
+    commands.spawn(jump_pad_bundle(
+        hole_02,
+        Transform::from_xyz(0.8, 0.05, 0.0),
+    ));
+
+    let floor_3_path = "Course2.glb#Mesh4/Primitive0";
+    let floor_3_handle: Handle<Mesh> = server.load(floor_3_path);
+    let walls_3_path = "Course2.glb#Mesh5/Primitive0";
+    let walls_3_handle: Handle<Mesh> = server.load(walls_3_path);
+
+    let hole_03 = commands
+        .spawn(hole_bundle(
+            "Hole 3".to_string(),
+            course,
+            Vec3::new(4.0, 0.5, 0.8),
+            Transform::from_xyz(4.0, 0.0, 0.8).with_rotation(Quat::from_euler(EulerRot::XYZ, 0.0, PI, 0.0)),
+            floor_3_path,
+            floor_3_handle,
+        ))
+        .id();
+
+    commands.spawn(hole_walls_bundle(
+        "Hole 3 walls".to_string(),
+        hole_03,
+        walls_3_path,
+        walls_3_handle,
+    ));
+
+    commands.spawn(hole_bounding_box_bundle(
+        "Hole 3 bounding box".to_string(),
+        hole_03,
+        Transform::from_xyz(0.6, 0.2, 0.2),
+        Collider::cuboid(2.0, 4.0, 1.2),
+    ));
+
+    commands.spawn(hole_sensor_bundle(
+        "Hole 3 sensor".to_string(),
+        hole_03,
+        Transform::from_xyz(1.2, -0.05, 0.0),
+    ));
+
+    commands.spawn(bumper_bundle(
+        hole_03,
+        Transform::from_xyz(0.8, 0.025, -0.4),
+        bumper_path.to_string(),
+    ));
 
     commands.spawn((
         Name::new("Bumper collision observer"),
@@ -288,7 +302,86 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
     ));
 }
 
-fn power_up_bundle(transform: Transform) -> impl Bundle {
+fn hole_bundle(
+    name: String,
+    course_entity: Entity,
+    start_position: Vec3,
+    transform: Transform,
+    asset_path: &str,
+    mesh: Handle<Mesh>,
+) -> impl Bundle {
+    (
+        Name::new(name),
+        Hole { start_position },
+        transform,
+        Replicated,
+        Mesh3d(mesh),
+        LevelMesh::from_path(asset_path),
+        RigidBody::Static,
+        ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
+        CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
+        Friction::new(0.9),
+        Restitution::new(0.1),
+        ChildOf(course_entity),
+    )
+}
+
+fn hole_walls_bundle(
+    name: String,
+    hole_entity: Entity,
+    asset_path: &str,
+    mesh: Handle<Mesh>,
+) -> impl Bundle {
+    (
+        Name::new(name),
+        Transform::IDENTITY,
+        HoleWalls { hole_entity },
+        Replicated,
+        Mesh3d(mesh),
+        LevelMesh::from_path(asset_path),
+        RigidBody::Static,
+        ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
+        CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
+        Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
+        Restitution::new(0.9).with_combine_rule(CoefficientCombine::Max),
+        ChildOf(hole_entity),
+    )
+}
+
+fn hole_bounding_box_bundle(
+    name: String,
+    hole_entity: Entity,
+    transform: Transform,
+    collider: Collider,
+) -> impl Bundle {
+    (
+        Name::new(name),
+        transform,
+        Sensor,
+        HoleBoundingBox::new(hole_entity),
+        RigidBody::Static,
+        CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
+        collider,
+        CollidingEntities::default(),
+        ChildOf(hole_entity),
+    )
+}
+
+fn hole_sensor_bundle(name: String, hole_entity: Entity, transform: Transform) -> impl Bundle {
+    (
+        Name::new(name),
+        transform,
+        Sensor,
+        HoleSensor::new(hole_entity),
+        RigidBody::Static,
+        CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
+        Collider::cuboid(0.2, 0.09, 0.2),
+        CollidingEntities::default(),
+        ChildOf(hole_entity),
+    )
+}
+
+fn power_up_bundle(hole_entity: Entity, transform: Transform) -> impl Bundle {
     (
         Name::new("Power up"),
         transform,
@@ -299,10 +392,11 @@ fn power_up_bundle(transform: Transform) -> impl Bundle {
         CollidingEntities::default(),
         PowerUp::from(rand::rng().random::<PowerUpType>()),
         Replicated,
+        ChildOf(hole_entity),
     )
 }
 
-fn bumper_bundle(transform: Transform, asset: String) -> impl Bundle {
+fn bumper_bundle(hole_entity: Entity, transform: Transform, asset: String) -> impl Bundle {
     (
         Name::new("Bumper"),
         Bumper,
@@ -313,10 +407,11 @@ fn bumper_bundle(transform: Transform, asset: String) -> impl Bundle {
         Replicated,
         LevelMesh { asset },
         CollisionEventsEnabled,
+        ChildOf(hole_entity),
     )
 }
 
-fn jump_pad_bundle(transform: Transform) -> impl Bundle {
+fn jump_pad_bundle(hole_entity: Entity, transform: Transform) -> impl Bundle {
     (
         Name::new("Jump pad"),
         JumpPad,
@@ -327,6 +422,7 @@ fn jump_pad_bundle(transform: Transform) -> impl Bundle {
         Sensor,
         Replicated,
         CollisionEventsEnabled,
+        ChildOf(hole_entity),
     )
 }
 
