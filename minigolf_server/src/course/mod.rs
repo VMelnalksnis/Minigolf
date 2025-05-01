@@ -165,9 +165,9 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
 
     let bumper_path = "Entities.glb#Mesh1/Primitive0";
 
-    let floor_1_path = "Course2.glb#Mesh0/Primitive0";
+    let floor_1_path = "courses/0002.glb#Mesh0/Primitive0";
     let floor_1_handle: Handle<Mesh> = server.load(floor_1_path);
-    let walls_1_path = "Course2.glb#Mesh1/Primitive0";
+    let walls_1_path = "courses/0002.glb#Mesh1/Primitive0";
     let walls_1_handle: Handle<Mesh> = server.load(walls_1_path);
 
     let hole_1 = commands
@@ -206,9 +206,9 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
         Transform::from_xyz(0.8, 0.025, 0.0),
     ));
 
-    let floor_2_path = "Course2.glb#Mesh2/Primitive0";
+    let floor_2_path = "courses/0002.glb#Mesh2/Primitive0";
     let floor_2_handle: Handle<Mesh> = server.load(floor_2_path);
-    let walls_2_path = "Course2.glb#Mesh3/Primitive0";
+    let walls_2_path = "courses/0002.glb#Mesh3/Primitive0";
     let walls_2_handle: Handle<Mesh> = server.load(walls_2_path);
 
     let hole_02 = commands
@@ -247,9 +247,9 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
         Transform::from_xyz(0.8, 0.05, 0.0),
     ));
 
-    let floor_3_path = "Course2.glb#Mesh4/Primitive0";
+    let floor_3_path = "courses/0002.glb#Mesh4/Primitive0";
     let floor_3_handle: Handle<Mesh> = server.load(floor_3_path);
-    let walls_3_path = "Course2.glb#Mesh5/Primitive0";
+    let walls_3_path = "courses/0002.glb#Mesh5/Primitive0";
     let walls_3_handle: Handle<Mesh> = server.load(walls_3_path);
 
     let hole_03 = commands
