@@ -16,3 +16,6 @@ aeronet = { workspace = true }
 aeronet_websocket = { workspace = true, features = ["server"] }
 serde_json = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
+
+[features]
+dynamic_linking = ["bevy/dynamic_linking"]
