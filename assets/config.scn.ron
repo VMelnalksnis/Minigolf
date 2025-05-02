@@ -1,0 +1,13 @@
+(
+  resources: {
+    "minigolf_server::server::Configuration": (
+      wind_strength: 0.3,
+      hole_magnet_min_distance: 0.05,
+      hole_magnet_max_distance: 0.2,
+      hole_magnet_strength: 50.0,
+      bumper_strength: 0.1,
+      jump_pad_strength: 0.2,
+    ),
+  },
+  entities: {},
+)

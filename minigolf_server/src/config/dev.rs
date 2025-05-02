@@ -1,11 +1,13 @@
 use {
-    crate::config::ServerPlugin,
+    crate::{config::ServerPlugin, course::setup::CourseConfiguration, server::Configuration},
     bevy::{
         asset::{ReflectAsset, UntypedAssetId},
+        ecs::system::RunSystemOnce,
         math::{DQuat, DVec3},
         prelude::*,
         reflect::TypeRegistry,
         render::camera::{CameraProjection, Viewport},
+        tasks::IoTaskPool,
         window::PrimaryWindow,
     },
     bevy_egui::{EguiContext, EguiContextPass, EguiContextSettings, EguiPlugin},
@@ -18,7 +20,7 @@ use {
         },
     },
     egui_dock::{DockArea, DockState, NodeIndex, Style},
-    std::any::TypeId,
+    std::{any::TypeId, fs::File, io::Write},
     transform_gizmo_egui::{Gizmo, GizmoConfig, GizmoExt, GizmoOrientation, mint},
 };
 
@@ -35,6 +37,7 @@ impl Plugin for ServerPlugin {
         app.register_type::<AlphaMode>();
 
         app.insert_resource(UiState::new());
+        app.init_resource::<SceneLoaderState>();
 
         app.add_systems(Startup, setup);
         app.add_systems(EguiContextPass, show_ui_system);
@@ -117,10 +120,16 @@ struct UiState {
 impl UiState {
     pub fn new() -> Self {
         let mut state = DockState::new(vec![EditorWindow::GameView]);
+
         let tree = state.main_surface_mut();
-        let [game, _inspector] =
+        let [game, inspector] =
             tree.split_right(NodeIndex::root(), 0.75, vec![EditorWindow::Inspector]);
+
+        let [_inspector, _scene] =
+            tree.split_below(inspector, 0.8, vec![EditorWindow::SceneLoader]);
+
         let [game, _hierarchy] = tree.split_left(game, 0.2, vec![EditorWindow::Hierarchy]);
+
         let [_game, _bottom] = tree.split_below(
             game,
             0.8,
@@ -157,6 +166,7 @@ enum EditorWindow {
     Resources,
     Assets,
     Inspector,
+    SceneLoader,
 }
 
 struct TabViewer<'a> {
@@ -184,19 +194,24 @@ impl egui_dock::TabViewer for TabViewer<'_> {
 
                 draw_gizmo(ui, &mut self.gizmo, self.world, self.selected_entities);
             }
+
             EditorWindow::Hierarchy => {
                 let selected = hierarchy_ui(self.world, ui, self.selected_entities);
                 if selected {
                     *self.selection = InspectorSelection::Entities;
                 }
             }
+
             EditorWindow::Resources => select_resource(ui, &type_registry, self.selection),
+
             EditorWindow::Assets => select_asset(ui, &type_registry, self.world, self.selection),
+
             EditorWindow::Inspector => match *self.selection {
                 InspectorSelection::Entities => match self.selected_entities.as_slice() {
                     &[entity] => ui_for_entity_with_children(self.world, entity, ui),
                     entities => ui_for_entities_shared_components(self.world, entities, ui),
                 },
+
                 InspectorSelection::Resource(type_id, ref name) => {
                     ui.label(name);
                     bevy_inspector::by_type_id::ui_for_resource(
@@ -207,6 +222,7 @@ impl egui_dock::TabViewer for TabViewer<'_> {
                         &type_registry,
                     )
                 }
+
                 InspectorSelection::Asset(type_id, ref name, handle) => {
                     ui.label(name);
                     bevy_inspector::by_type_id::ui_for_asset(
@@ -218,6 +234,8 @@ impl egui_dock::TabViewer for TabViewer<'_> {
                     );
                 }
             },
+
+            EditorWindow::SceneLoader => scene_loader(ui, self.world),
         }
     }
 
@@ -350,4 +368,88 @@ fn select_asset(
             }
         });
     }
+}
+
+#[derive(Resource, Reflect, Debug)]
+struct SceneLoaderState {
+    path: String,
+}
+
+impl Default for SceneLoaderState {
+    fn default() -> Self {
+        SceneLoaderState {
+            path: "courses/0002".to_owned(),
+        }
+    }
+}
+
+fn scene_loader(ui: &mut egui::Ui, world: &mut World) {
+    let mut state = world.resource_mut::<SceneLoaderState>();
+
+    ui.horizontal(|ui| {
+        ui.label("Scene File:");
+        ui.text_edit_singleline(&mut state.path);
+    });
+
+    ui.horizontal(|ui| {
+        if ui.button("Load file").clicked() {
+            return;
+        }
+
+        if ui.button("Save file").clicked() {
+            save_scene(world);
+        }
+    });
+
+    ui.horizontal(|ui| {
+        if ui.button("Save configuration").clicked() {
+            save_configuration(world);
+        }
+    });
+}
+
+fn save_configuration(world: &mut World) {
+    let app_type_registry = world.resource::<AppTypeRegistry>();
+    let type_registry = app_type_registry.read();
+
+    let scene = DynamicSceneBuilder::from_world(world)
+        .deny_all_resources()
+        .allow_resource::<Configuration>()
+        .extract_resources()
+        .build();
+
+    let serialized_scene = scene.serialize(&type_registry).unwrap();
+    IoTaskPool::get()
+        .spawn(async move {
+            File::create("assets/config.scn.ron".to_string())
+                .and_then(|mut file| file.write(serialized_scene.as_bytes()))
+                .expect("Could not write to file");
+        })
+        .detach();
+}
+
+fn save_scene(world: &mut World) {
+    world
+        .run_system_once(crate::course::setup::capture_course_state)
+        .unwrap();
+
+    let state = world.resource::<SceneLoaderState>();
+    let path = state.path.clone();
+    let app_type_registry = world.resource::<AppTypeRegistry>();
+    let type_registry = app_type_registry.read();
+
+    let scene = DynamicSceneBuilder::from_world(world)
+        .deny_all_resources()
+        .allow_resource::<CourseConfiguration>()
+        .extract_resources()
+        .build();
+
+    let serialized_scene = scene.serialize(&type_registry).unwrap();
+    IoTaskPool::get()
+        .spawn(async move {
+            File::create(format!("assets/{path}.scn.ron"))
+                .and_then(|mut file| file.write(serialized_scene.as_bytes()))
+                .expect("Could not write to file");
+        })
+        .detach();
 }

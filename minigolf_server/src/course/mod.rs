@@ -1,17 +1,15 @@
 mod power_ups;
+pub(crate) mod setup;
 
 use {
     crate::{
         ServerState,
-        course::power_ups::PowerUpPlugin,
-        server::{GameLayer, LastPlayerPosition, ValidPlayerInput},
+        course::{power_ups::PowerUpPlugin, setup::CourseSetupPlugin},
+        server::{Configuration, GameLayer, GlobalState, LastPlayerPosition, ValidPlayerInput},
     },
     avian3d::prelude::*,
     bevy::{app::App, math::DVec3, prelude::*},
-    bevy_replicon::prelude::*,
-    minigolf::{LevelMesh, Player, PlayerInput, PlayerScore, PowerUp, PowerUpType},
-    rand::Rng,
-    std::f32::consts::PI,
+    minigolf::{Player, PlayerInput, PlayerScore, PowerUp},
 };
 
 pub(crate) struct CoursePlugin;
@@ -19,22 +17,27 @@ pub(crate) struct CoursePlugin;
 impl Plugin for CoursePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(PowerUpPlugin);
+        app.add_plugins(CourseSetupPlugin);
 
-        app.register_type::<Course>()
-            .register_type::<Hole>()
-            .register_type::<HoleSensor>()
-            .register_type::<HoleBoundingBox>()
-            .register_type::<HoleWalls>();
-
+        app.register_type::<Course>();
+        app.register_type::<Hole>();
+        app.register_type::<HoleSensor>();
+        app.register_type::<HoleBoundingBox>();
+        app.register_type::<HoleWalls>();
         app.register_type::<Bumper>();
         app.register_type::<JumpPad>();
+
+        app.register_type::<CurrentHole>();
+
+        app.register_required_components::<PowerUp, CollidingEntities>();
+
+        app.init_resource::<PhysicsConfig>();
 
         app.add_observer(on_hole_added);
 
         app.add_systems(OnEnter(ServerState::WaitingForPlayers), setup_course);
 
         app.add_systems(OnEnter(ServerState::Playing), setup_playing);
-        app.add_systems(OnExit(ServerState::Playing), despawn_level);
 
         app.configure_sets(Update, PlayingSet.run_if(in_state(ServerState::Playing)));
         app.configure_sets(
@@ -66,17 +69,18 @@ pub(crate) struct HoleCompleted;
 pub(crate) struct CourseCompleted;
 
 fn setup_playing(mut commands: Commands) {
-    commands.spawn((
-        Name::new("Course Completed observer"),
-        Observer::new(on_course_completed),
-        StateScoped(ServerState::Playing),
-    ));
-
-    commands.spawn((
-        Name::new("Hole Completed observer"),
-        Observer::new(on_hole_completed),
-        StateScoped(ServerState::Playing),
-    ));
+    commands.spawn_batch([
+        (
+            Name::new("Course Completed observer"),
+            Observer::new(on_course_completed),
+            StateScoped(ServerState::Playing),
+        ),
+        (
+            Name::new("Hole Completed observer"),
+            Observer::new(on_hole_completed),
+            StateScoped(ServerState::Playing),
+        ),
+    ]);
 }
 
 fn on_course_completed(
@@ -84,6 +88,40 @@ fn on_course_completed(
     mut state: ResMut<NextState<ServerState>>,
 ) {
     state.set(ServerState::WaitingForGame);
+}
+
+#[derive(Resource, Reflect)]
+#[reflect(Resource)]
+pub(crate) struct PhysicsConfig {
+    floor: PhysicsParameters,
+    walls: PhysicsParameters,
+}
+
+#[derive(Reflect)]
+pub(crate) struct PhysicsParameters {
+    friction: Friction,
+    restitution: Restitution,
+}
+
+impl PhysicsParameters {
+    pub(crate) fn default_components(&self) -> impl Bundle {
+        (self.friction, self.restitution)
+    }
+}
+
+impl Default for PhysicsConfig {
+    fn default() -> Self {
+        PhysicsConfig {
+            floor: PhysicsParameters {
+                friction: Friction::new(0.9),
+                restitution: Restitution::new(0.1),
+            },
+            walls: PhysicsParameters {
+                friction: Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
+                restitution: Restitution::new(0.9).with_combine_rule(CoefficientCombine::Max),
+            },
+        }
+    }
 }
 
 #[derive(Component, Reflect, Debug)]
@@ -98,11 +136,21 @@ impl Course {
 }
 
 #[derive(Component, Reflect, Copy, Clone, Debug)]
+#[require(
+    RigidBody::Static,
+    CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
+    Children)]
 pub(crate) struct Hole {
     pub(crate) start_position: Vec3,
 }
 
 #[derive(Component, Reflect, Copy, Clone, Debug)]
+#[require(
+    RigidBody::Static,
+    ColliderConstructor::Cuboid{ x_length: 0.2, y_length: 0.09, z_length: 0.2 },
+    Sensor,
+    CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
+    CollidingEntities)]
 pub(crate) struct HoleSensor {
     hole: Entity,
 }
@@ -114,6 +162,11 @@ impl HoleSensor {
 }
 
 #[derive(Component, Reflect, Copy, Clone, Debug)]
+#[require(
+    RigidBody::Static,
+    Sensor,
+    CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
+    CollidingEntities)]
 pub(crate) struct HoleBoundingBox {
     hole: Entity,
 }
@@ -125,11 +178,15 @@ impl HoleBoundingBox {
 }
 
 #[derive(Component, Reflect, Debug)]
-struct HoleWalls {
+#[require(
+    RigidBody::Static,
+    CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]))]
+pub(crate) struct HoleWalls {
     hole_entity: Entity,
 }
 
-#[derive(Resource)]
+#[derive(Resource, Reflect, Debug)]
+#[reflect(Resource)]
 pub(crate) struct CurrentHole {
     pub(crate) hole: Hole,
     hole_entity: Entity,
@@ -141,298 +198,48 @@ pub(crate) struct PlayingSet;
 
 /// Component for identifying bumper entities.
 #[derive(Component, Reflect, Debug)]
+#[require(
+    RigidBody::Static,
+    CollisionEventsEnabled,
+    CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
+    ColliderConstructor::Cylinder{ radius: 0.042672, height: 0.05 })]
 pub(crate) struct Bumper;
 
 /// Component for identifying jump pad entities.
 #[derive(Component, Reflect, Debug)]
+#[require(
+    RigidBody::Static,
+    ColliderConstructor::Cylinder{ radius: 0.085344, height: 0.05 },
+    Sensor)]
 pub(crate) struct JumpPad;
 
 fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
-    let scene = commands
-        .spawn((Name::new("Scene"), SceneRoot::default(), Replicated))
-        .id();
-
-    let course = commands
-        .spawn((
-            Name::new("Course"),
-            Course::new(),
-            Transform::default(),
-            Visibility::default(),
-            Replicated,
-        ))
-        .insert(ChildOf(scene))
-        .id();
-
-    let bumper_path = "Entities.glb#Mesh1/Primitive0";
-
-    let floor_1_path = "courses/0002.glb#Mesh0/Primitive0";
-    let floor_1_handle: Handle<Mesh> = server.load(floor_1_path);
-    let walls_1_path = "courses/0002.glb#Mesh1/Primitive0";
-    let walls_1_handle: Handle<Mesh> = server.load(walls_1_path);
-
-    let hole_1 = commands
-        .spawn(hole_bundle(
-            "Hole 1".to_string(),
-            course,
-            Vec3::new(0.0, 0.5, 0.0),
-            Transform::from_xyz(0.0, 0.0, 0.0),
-            floor_1_path,
-            floor_1_handle,
-        ))
-        .id();
-
-    commands.spawn(hole_walls_bundle(
-        "Hole 1 walls".to_string(),
-        hole_1,
-        walls_1_path,
-        walls_1_handle,
-    ));
-
-    commands.spawn(hole_bounding_box_bundle(
-        "Hole 1 bounding box".to_string(),
-        hole_1,
-        Transform::from_xyz(0.6, 0.2, 0.0),
-        Collider::cuboid(2.0, 4.0, 0.8),
-    ));
-
-    commands.spawn(hole_sensor_bundle(
-        "Hole 1 sensor".to_string(),
-        hole_1,
-        Transform::from_xyz(1.2, -0.05, 0.0),
-    ));
-
-    commands.spawn(power_up_bundle(
-        hole_1,
-        Transform::from_xyz(0.8, 0.025, 0.0),
-    ));
-
-    let floor_2_path = "courses/0002.glb#Mesh2/Primitive0";
-    let floor_2_handle: Handle<Mesh> = server.load(floor_2_path);
-    let walls_2_path = "courses/0002.glb#Mesh3/Primitive0";
-    let walls_2_handle: Handle<Mesh> = server.load(walls_2_path);
-
-    let hole_02 = commands
-        .spawn(hole_bundle(
-            "Hole 2".to_string(),
-            course,
-            Vec3::new(2.0, 0.5, 0.0),
-            Transform::from_xyz(2.0, 0.0, 0.0),
-            floor_2_path,
-            floor_2_handle,
-        ))
-        .id();
-
-    commands.spawn(hole_walls_bundle(
-        "Hole 2 walls".to_string(),
-        hole_02,
-        walls_2_path,
-        walls_2_handle,
-    ));
-
-    commands.spawn(hole_bounding_box_bundle(
-        "Hole 2 bounding box".to_string(),
-        hole_02,
-        Transform::from_xyz(1.0, 0.2, -0.2),
-        Collider::cuboid(3.0, 4.0, 1.2),
-    ));
-
-    commands.spawn(hole_sensor_bundle(
-        "Hole 2 sensor".to_string(),
-        hole_02,
-        Transform::from_xyz(2.0, -0.05, 0.0),
-    ));
-
-    commands.spawn(jump_pad_bundle(
-        hole_02,
-        Transform::from_xyz(0.8, 0.05, 0.0),
-    ));
-
-    let floor_3_path = "courses/0002.glb#Mesh4/Primitive0";
-    let floor_3_handle: Handle<Mesh> = server.load(floor_3_path);
-    let walls_3_path = "courses/0002.glb#Mesh5/Primitive0";
-    let walls_3_handle: Handle<Mesh> = server.load(walls_3_path);
-
-    let hole_03 = commands
-        .spawn(hole_bundle(
-            "Hole 3".to_string(),
-            course,
-            Vec3::new(4.0, 0.5, 0.8),
-            Transform::from_xyz(4.0, 0.0, 0.8).with_rotation(Quat::from_euler(EulerRot::XYZ, 0.0, PI, 0.0)),
-            floor_3_path,
-            floor_3_handle,
-        ))
-        .id();
-
-    commands.spawn(hole_walls_bundle(
-        "Hole 3 walls".to_string(),
-        hole_03,
-        walls_3_path,
-        walls_3_handle,
-    ));
-
-    commands.spawn(hole_bounding_box_bundle(
-        "Hole 3 bounding box".to_string(),
-        hole_03,
-        Transform::from_xyz(0.6, 0.2, 0.2),
-        Collider::cuboid(2.0, 4.0, 1.2),
-    ));
-
-    commands.spawn(hole_sensor_bundle(
-        "Hole 3 sensor".to_string(),
-        hole_03,
-        Transform::from_xyz(1.2, -0.05, 0.0),
-    ));
-
-    commands.spawn(bumper_bundle(
-        hole_03,
-        Transform::from_xyz(0.8, 0.025, -0.4),
-        bumper_path.to_string(),
-    ));
+    commands.spawn_batch([
+        (
+            Name::new("Bumper collision observer"),
+            StateScoped(ServerState::Playing),
+            Observer::new(on_bumper_collision),
+        ),
+        (
+            Name::new("Jump pad collision observer"),
+            StateScoped(ServerState::Playing),
+            Observer::new(on_jump_pad_collision),
+        ),
+    ]);
 
     commands.spawn((
-        Name::new("Bumper collision observer"),
-        StateScoped(ServerState::Playing),
-        Observer::new(on_bumper_collision),
-    ));
-
-    commands.spawn((
-        Name::new("Jump pad collision observer"),
-        StateScoped(ServerState::Playing),
-        Observer::new(on_jump_pad_collision),
+        Name::new("Course scene"),
+        DynamicSceneRoot(server.load("courses\\0002.scn.ron")),
+        StateScoped(GlobalState::Game),
     ));
 }
-
-fn hole_bundle(
-    name: String,
-    course_entity: Entity,
-    start_position: Vec3,
-    transform: Transform,
-    asset_path: &str,
-    mesh: Handle<Mesh>,
-) -> impl Bundle {
-    (
-        Name::new(name),
-        Hole { start_position },
-        transform,
-        Replicated,
-        Mesh3d(mesh),
-        LevelMesh::from_path(asset_path),
-        RigidBody::Static,
-        ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
-        CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
-        Friction::new(0.9),
-        Restitution::new(0.1),
-        ChildOf(course_entity),
-    )
-}
-
-fn hole_walls_bundle(
-    name: String,
-    hole_entity: Entity,
-    asset_path: &str,
-    mesh: Handle<Mesh>,
-) -> impl Bundle {
-    (
-        Name::new(name),
-        Transform::IDENTITY,
-        HoleWalls { hole_entity },
-        Replicated,
-        Mesh3d(mesh),
-        LevelMesh::from_path(asset_path),
-        RigidBody::Static,
-        ColliderConstructor::TrimeshFromMeshWithConfig(TrimeshFlags::all()),
-        CollisionLayers::new(GameLayer::Default, [GameLayer::Default, GameLayer::Player]),
-        Friction::new(0.8).with_combine_rule(CoefficientCombine::Multiply),
-        Restitution::new(0.9).with_combine_rule(CoefficientCombine::Max),
-        ChildOf(hole_entity),
-    )
-}
-
-fn hole_bounding_box_bundle(
-    name: String,
-    hole_entity: Entity,
-    transform: Transform,
-    collider: Collider,
-) -> impl Bundle {
-    (
-        Name::new(name),
-        transform,
-        Sensor,
-        HoleBoundingBox::new(hole_entity),
-        RigidBody::Static,
-        CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-        collider,
-        CollidingEntities::default(),
-        ChildOf(hole_entity),
-    )
-}
-
-fn hole_sensor_bundle(name: String, hole_entity: Entity, transform: Transform) -> impl Bundle {
-    (
-        Name::new(name),
-        transform,
-        Sensor,
-        HoleSensor::new(hole_entity),
-        RigidBody::Static,
-        CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-        Collider::cuboid(0.2, 0.09, 0.2),
-        CollidingEntities::default(),
-        ChildOf(hole_entity),
-    )
-}
-
-fn power_up_bundle(hole_entity: Entity, transform: Transform) -> impl Bundle {
-    (
-        Name::new("Power up"),
-        transform,
-        Sensor,
-        RigidBody::Static,
-        CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-        Collider::sphere(0.1),
-        CollidingEntities::default(),
-        PowerUp::from(rand::rng().random::<PowerUpType>()),
-        Replicated,
-        ChildOf(hole_entity),
-    )
-}
-
-fn bumper_bundle(hole_entity: Entity, transform: Transform, asset: String) -> impl Bundle {
-    (
-        Name::new("Bumper"),
-        Bumper,
-        transform,
-        RigidBody::Static,
-        Collider::cylinder(0.042672, 0.05),
-        CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-        Replicated,
-        LevelMesh { asset },
-        CollisionEventsEnabled,
-        ChildOf(hole_entity),
-    )
-}
-
-fn jump_pad_bundle(hole_entity: Entity, transform: Transform) -> impl Bundle {
-    (
-        Name::new("Jump pad"),
-        JumpPad,
-        transform,
-        RigidBody::Static,
-        Collider::cylinder(0.085344, 0.05),
-        CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-        Sensor,
-        Replicated,
-        CollisionEventsEnabled,
-        ChildOf(hole_entity),
-    )
-}
-
-const BUMPER_STRENGTH: f64 = 0.1;
 
 fn on_bumper_collision(
     trigger: Trigger<OnCollisionStart>,
     bumpers: Query<&Position, With<Bumper>>,
     players: Query<&Position, With<Player>>,
     mut commands: Commands,
+    config: Res<Configuration>,
 ) {
     let bumper_entity = trigger.target();
     let Ok(bumper_position) = bumpers.get(bumper_entity) else {
@@ -454,16 +261,15 @@ fn on_bumper_collision(
 
     commands
         .entity(other_entity)
-        .insert(ExternalImpulse::new(direction * BUMPER_STRENGTH).with_persistence(false));
+        .insert(ExternalImpulse::new(direction * config.bumper_strength).with_persistence(false));
 }
-
-const JUMP_PAD_STRENGTH: f64 = 0.2;
 
 fn on_jump_pad_collision(
     trigger: Trigger<OnCollisionStart>,
     jump_pads: Query<(), With<JumpPad>>,
     players: Query<(), With<Player>>,
     mut commands: Commands,
+    config: Res<Configuration>,
 ) {
     let jump_pad_entity = trigger.target();
     let Ok(_) = jump_pads.get(jump_pad_entity) else {
@@ -484,7 +290,7 @@ fn on_jump_pad_collision(
 
     commands
         .entity(other_entity)
-        .insert(ExternalImpulse::new(direction * JUMP_PAD_STRENGTH).with_persistence(false));
+        .insert(ExternalImpulse::new(direction * config.jump_pad_strength).with_persistence(false));
 }
 
 fn on_hole_added(
@@ -665,10 +471,4 @@ fn on_hole_completed(
             last_position.position = next_hole.start_position;
             last_position.rotation = Quat::IDENTITY;
         });
-}
-
-fn despawn_level(scenes: Query<Entity, With<SceneRoot>>, mut commands: Commands) {
-    for scene in scenes.iter() {
-        commands.entity(scene).try_despawn(); // todo: does not despawn power ups
-    }
 }

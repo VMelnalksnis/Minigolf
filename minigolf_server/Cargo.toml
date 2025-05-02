@@ -28,4 +28,4 @@ transform-gizmo-egui = { workspace = true, optional = true }
 
 [features]
 dynamic_linking = ["bevy/dynamic_linking"]
-ui = ["bevy_egui", "bevy-inspector-egui", "egui", "egui_dock", "transform-gizmo-egui"]
+ui = ["bevy_egui", "bevy-inspector-egui", "egui", "egui_dock", "transform-gizmo-egui", "bevy/file_watcher", "bevy/track_location"]

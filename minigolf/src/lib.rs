@@ -94,7 +94,7 @@ impl Default for PlayerCredentials {
     }
 }
 
-#[derive(Debug, Clone, Component, Serialize, Deserialize, Reflect)]
+#[derive(Component, Reflect, Serialize, Deserialize, Clone, Debug)]
 #[require(StateScoped::<GameState>(GameState::Playing))]
 pub struct LevelMesh {
     pub asset: String,

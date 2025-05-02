@@ -97,6 +97,13 @@ pub fn main() -> AppExit {
             linear: 1.0,
             ..default()
         })
+        .register_type::<Configuration>()
+        .init_resource::<Configuration>()
+        .init_state::<GlobalState>()
+        .enable_state_scoped_entities::<GlobalState>()
+        .add_systems(Startup, load_configuration)
+        .add_systems(OnExit(ServerState::WaitingForGame), set_game)
+        .add_systems(OnEnter(ServerState::WaitingForGame), set_idle)
         .add_systems(FixedPreUpdate, increment_tick)
         .add_systems(FixedUpdate, recv_input.run_if(server_or_singleplayer))
         .add_systems(
@@ -113,6 +120,57 @@ pub fn main() -> AppExit {
         )
         .add_event::<ValidPlayerInput>()
         .run()
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, States)]
+pub(crate) enum GlobalState {
+    #[default]
+    Idle,
+    Game,
+}
+
+fn set_game(mut state: ResMut<NextState<GlobalState>>) {
+    state.set(GlobalState::Game);
+}
+fn set_idle(mut state: ResMut<NextState<GlobalState>>) {
+    state.set(GlobalState::Idle);
+}
+
+#[derive(Resource, Reflect, Debug)]
+#[reflect(Resource)]
+pub(crate) struct Configuration {
+    pub(crate) wind_strength: f32,
+
+    pub(crate) hole_magnet_min_distance: f32,
+    pub(crate) hole_magnet_max_distance: f32,
+    pub(crate) hole_magnet_strength: f32,
+
+    pub(crate) bumper_strength: f64,
+
+    pub(crate) jump_pad_strength: f64,
+}
+
+impl Default for Configuration {
+    fn default() -> Self {
+        Configuration {
+            wind_strength: 0.3,
+
+            hole_magnet_min_distance: 0.05,
+            hole_magnet_max_distance: 0.2,
+            hole_magnet_strength: 50.0,
+
+            bumper_strength: 0.1,
+
+            jump_pad_strength: 0.2,
+        }
+    }
+}
+
+fn load_configuration(server: Res<AssetServer>, mut commands: Commands) {
+    commands.spawn((
+        Name::new("Configuration"),
+        DynamicSceneRoot(server.load("config.scn.ron")),
+    ));
 }
 
 #[derive(Event, Reflect, Debug)]
@@ -231,12 +289,12 @@ fn player_can_move(
 
 fn on_player_authenticated(
     mut reader: EventReader<PlayerAuthenticated>,
-    current_hole: Res<CurrentHole>,
+    current_hole: Option<Res<CurrentHole>>,
     mut commands: Commands,
 ) {
-    for authenticated in reader.read() {
-        let initial_position = current_hole.hole.start_position;
+    let initial_position = current_hole.map_or_else(|| Vec3::ZERO, |h| h.hole.start_position);
 
+    for authenticated in reader.read() {
         commands.entity(authenticated.player).insert((
             LastPlayerPosition {
                 position: initial_position,

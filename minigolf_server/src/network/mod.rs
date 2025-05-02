@@ -3,6 +3,7 @@ mod listeners;
 use {
     crate::{
         ServerState,
+        course::CurrentHole,
         network::listeners::ServerListenerPlugin,
         server::{Args, PlayerSession},
     },
@@ -348,10 +349,15 @@ fn player_authentication_handler(
 fn all_players_joined(
     players: Query<(), With<Player>>,
     authenticated_players: Query<(), (With<Player>, With<Replicated>)>,
+    current_hole: Option<Res<CurrentHole>>,
     mut state: ResMut<NextState<ServerState>>,
 ) {
     let total_player_count = players.iter().count();
     let connected_player_count = authenticated_players.iter().count();
+
+    if let None = current_hole {
+        return;
+    }
 
     if total_player_count == connected_player_count {
         info!("All {:?} players joined", total_player_count);

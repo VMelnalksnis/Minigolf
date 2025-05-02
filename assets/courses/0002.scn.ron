@@ -1,0 +1,96 @@
+(
+  resources: {
+    "minigolf_server::course::setup::CourseConfiguration": (
+      holes: [
+        (
+          transform: (
+            translation: (0.0, 0.0, 0.0),
+            rotation: (0.0, 0.0, 0.0, 1.0),
+            scale: (1.0, 1.0, 1.0),
+          ),
+          start_position: (0.0, 0.5, 0.0),
+          hole_asset: "courses/0002.glb#Mesh0/Primitive0",
+          wall_asset: "courses/0002.glb#Mesh1/Primitive0",
+          bounding_box: (
+            translation: (0.6, 0.2, 0.0),
+            rotation: (0.0, 0.0, 0.0, 1.0),
+            scale: (2.0, 4.0, 0.8),
+          ),
+          hole_sensor: (
+            translation: (1.2, -0.05, 0.0),
+            rotation: (0.0, 0.0, 0.0, 1.0),
+            scale: (1.0, 1.0, 1.0),
+          ),
+          power_ups: [
+            (
+              translation: (0.8, 0.025, 0.0),
+              rotation: (0.0, 0.0, 0.0, 1.0),
+              scale: (1.0, 1.0, 1.0),
+            ),
+          ],
+          bumpers: [],
+          jump_pads: [],
+        ),
+        (
+          transform: (
+            translation: (2.0, 0.0, 0.0),
+            rotation: (0.0, 0.0, 0.0, 1.0),
+            scale: (1.0, 1.0, 1.0),
+          ),
+          start_position: (2.0, 0.5, 0.0),
+          hole_asset: "courses/0002.glb#Mesh2/Primitive0",
+          wall_asset: "courses/0002.glb#Mesh3/Primitive0",
+          bounding_box: (
+            translation: (1.0, 0.2, -0.2),
+            rotation: (0.0, 0.0, 0.0, 1.0),
+            scale: (2.0, 4.0, 0.8),
+          ),
+          hole_sensor: (
+            translation: (2.0, -0.05, 0.0),
+            rotation: (0.0, 0.0, 0.0, 1.0),
+            scale: (1.0, 1.0, 1.0),
+          ),
+          power_ups: [],
+          bumpers: [],
+          jump_pads: [
+            (
+              translation: (0.79999995, 0.05, 0.0),
+              rotation: (0.0, 0.0, 0.0, 1.0),
+              scale: (1.0, 1.0, 1.0),
+            ),
+          ],
+        ),
+        (
+          transform: (
+            translation: (4.0, 0.0, 0.8),
+            rotation: (0.0, 1.0, 0.0, -0.00000004371139),
+            scale: (1.0, 1.0, 1.0),
+          ),
+          start_position: (4.0, 0.5, 0.8),
+          hole_asset: "courses/0002.glb#Mesh4/Primitive0",
+          wall_asset: "courses/0002.glb#Mesh5/Primitive0",
+          bounding_box: (
+            translation: (-0.5999999, 0.2, 0.19999987),
+            rotation: (0.0, 0.0, 0.0, 1.0),
+            scale: (2.0, 4.0, 0.8),
+          ),
+          hole_sensor: (
+            translation: (-1.1999998, -0.05, 0.00000011920929),
+            rotation: (0.0, 0.0, 0.0, 1.0),
+            scale: (1.0, 1.0, 1.0),
+          ),
+          power_ups: [],
+          bumpers: [
+            (
+              translation: (-0.7999997, 0.025, 0.40000004),
+              rotation: (0.0, 0.0, 0.0, 1.0),
+              scale: (1.0, 1.0, 1.0),
+            ),
+          ],
+          jump_pads: [],
+        ),
+      ],
+    ),
+  },
+  entities: {},
+)

@@ -1,7 +1,7 @@
 use {
     crate::{
         ServerState,
-        course::{CurrentHole, HoleCompleted, HoleWalls, PlayingSet},
+        course::{Configuration, CurrentHole, HoleCompleted, HoleWalls, PlayingSet},
         server::{LastPlayerPosition, ValidPlayerInput},
     },
     avian3d::prelude::*,
@@ -47,14 +47,13 @@ fn setup_observers(mut commands: Commands) {
     ));
 }
 
-const WIND_POWER_UP_STRENGTH: f32 = 0.3;
-
 fn apply_power_ups(
     mut reader: EventReader<ValidPlayerInput>,
     current_hole: Res<CurrentHole>,
     mut commands: Commands,
     players: Query<Entity, With<Player>>,
     hole_walls: Query<(Entity, &HoleWalls)>,
+    config: Res<Configuration>,
 ) {
     for &ValidPlayerInput { input, player } in reader.read() {
         match input {
@@ -72,7 +71,7 @@ fn apply_power_ups(
 
             PlayerInput::Wind(direction) => {
                 let direction = direction.normalize();
-                let force = Vec3::new(direction.x, 0.0, direction.y) * WIND_POWER_UP_STRENGTH;
+                let force = Vec3::new(direction.x, 0.0, direction.y) * config.wind_strength;
 
                 players.iter().for_each(|player| {
                     commands
@@ -145,27 +144,29 @@ fn handle_power_up_sensors(
 #[derive(Component, Reflect)]
 struct HoleMagnetPowerUp;
 
-const HOLE_MAGNET_MAX_DISTANCE: f32 = 0.2;
-const HOLE_MAGNET_MIN_DISTANCE: f32 = 0.05;
-
 fn apply_hole_magnet(
     current_hole: Res<CurrentHole>,
     mut commands: Commands,
     transforms: Query<&GlobalTransform>,
     players: Query<(Entity, &GlobalTransform), (With<Player>, With<HoleMagnetPowerUp>)>,
     time: Res<Time<Fixed>>,
+    config: Res<Configuration>,
 ) {
-    let hole_transform = transforms.get(current_hole.hole_entity).unwrap();
+    let Ok(hole_transform) = transforms.get(current_hole.hole_entity) else {
+        return;
+    };
 
     for (player, transform) in players.iter() {
         let vector = hole_transform.translation() - transform.translation();
         let distance = vector.length();
 
-        if distance >= HOLE_MAGNET_MAX_DISTANCE || distance <= HOLE_MAGNET_MIN_DISTANCE {
+        if distance >= config.hole_magnet_max_distance
+            || distance <= config.hole_magnet_min_distance
+        {
             continue;
         }
 
-        let force = vector.normalize() * time.delta_secs() * 50.0;
+        let force = vector.normalize() * time.delta_secs() * config.hole_magnet_strength;
         commands
             .entity(player)
             .insert(ExternalForce::new(DVec3::from(force)).with_persistence(false));
