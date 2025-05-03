@@ -1,6 +1,6 @@
 (
   resources: {
-    "minigolf_server::server::Configuration": (
+    "minigolf_server::Configuration": (
       wind_strength: 0.3,
       hole_magnet_min_distance: 0.05,
       hole_magnet_max_distance: 0.2,

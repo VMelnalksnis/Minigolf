@@ -1,5 +1,5 @@
 use {
-    crate::{config::ServerPlugin, course::setup::CourseConfiguration, server::Configuration},
+    crate::{Configuration, config::ServerPlugin, course::setup::CourseConfiguration},
     bevy::{
         asset::{ReflectAsset, UntypedAssetId},
         ecs::system::RunSystemOnce,

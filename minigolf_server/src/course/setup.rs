@@ -1,9 +1,9 @@
 use {
     crate::{
+        GameLayer, GlobalState,
         course::{
             Bumper, Course, Hole, HoleBoundingBox, HoleSensor, HoleWalls, JumpPad, PhysicsConfig,
         },
-        server::{GameLayer, GlobalState},
     },
     avian3d::prelude::*,
     bevy::prelude::*,

@@ -1,5 +1,5 @@
 use {
-    crate::server::Args,
+    crate::Args,
     aeronet_replicon::server::AeronetRepliconServer,
     aeronet_websocket::server::{WebSocketServer, WebSocketServerPlugin},
     aeronet_webtransport::{

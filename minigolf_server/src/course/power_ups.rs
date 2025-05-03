@@ -1,8 +1,7 @@
 use {
     crate::{
-        ServerState,
+        LastPlayerPosition, ServerState, ValidPlayerInput,
         course::{Configuration, CurrentHole, HoleCompleted, HoleWalls, PlayingSet},
-        server::{LastPlayerPosition, ValidPlayerInput},
     },
     avian3d::prelude::*,
     bevy::{math::DVec3, prelude::*},

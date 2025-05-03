@@ -3,9 +3,8 @@ pub(crate) mod setup;
 
 use {
     crate::{
-        ServerState,
+        Configuration, GameLayer, GlobalState, LastPlayerPosition, ServerState, ValidPlayerInput,
         course::{power_ups::PowerUpPlugin, setup::CourseSetupPlugin},
-        server::{Configuration, GameLayer, GlobalState, LastPlayerPosition, ValidPlayerInput},
     },
     avian3d::prelude::*,
     bevy::{app::App, math::DVec3, prelude::*},
