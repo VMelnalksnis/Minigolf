@@ -1,8 +1,8 @@
 use {
-    crate::{LocalPlayer, ui::ServerState},
+    crate::{LocalPlayer, input::InputTarget, ui::ServerState},
     bevy::prelude::*,
     bevy_egui::{EguiContexts, egui},
-    minigolf::{Player, PlayerInput, PlayerPowerUps, PlayerScore, PowerUpType},
+    minigolf::{Player, PlayerInput, PlayerPowerUps, PlayerScore, PowerUpType::*},
 };
 
 /// UI for displaying and interacting with power ups
@@ -37,6 +37,7 @@ fn power_up_ui(
     mut context: EguiContexts,
     player: Query<&PlayerPowerUps, With<LocalPlayer>>,
     mut writer: EventWriter<PlayerInput>,
+    mut input_target: ResMut<NextState<InputTarget>>,
 ) {
     let Ok(power_ups) = player.single() else {
         return;
@@ -52,23 +53,31 @@ fn power_up_ui(
                         info!("Use power up {:?}", power_up_type);
 
                         match power_up_type {
-                            PowerUpType::HoleMagnet => {
+                            HoleMagnet => {
                                 writer.write(PlayerInput::HoleMagnet);
                             }
 
-                            PowerUpType::StickyBall => {
+                            StickyBall => {
                                 writer.write(PlayerInput::StickyBall);
                             }
 
-                            PowerUpType::Wind => {
+                            Bumper => {
+                                input_target.set(InputTarget::Bumper);
+                            }
+
+                            BlackHoleBumper => {
+                                input_target.set(InputTarget::BlackHoleBumper);
+                            }
+
+                            Wind => {
                                 writer.write(PlayerInput::Wind(Vec2::new(1.0, 1.0))); // todo
                             }
 
-                            PowerUpType::StickyWalls => {
+                            StickyWalls => {
                                 writer.write(PlayerInput::StickyWalls);
                             }
 
-                            PowerUpType::IceRink => {
+                            IceRink => {
                                 writer.write(PlayerInput::IceRink);
                             }
 

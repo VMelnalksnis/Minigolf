@@ -3,9 +3,10 @@ use {
     bevy::{
         app::App,
         input::{common_conditions::input_just_released, mouse::MouseMotion, touch::TouchPhase},
+        picking::pointer::PointerInteraction,
         prelude::*,
     },
-    minigolf::{GameState, Player, PlayerInput},
+    minigolf::{GameState, PlayableArea, Player, PlayerInput},
 };
 
 pub(crate) mod camera;
@@ -14,9 +15,22 @@ pub(crate) struct MinigolfInputPlugin;
 
 impl Plugin for MinigolfInputPlugin {
     fn build(&self, app: &mut App) {
-        if !app.is_plugin_added::<CameraInputPlugin>() {
-            app.add_plugins(CameraInputPlugin);
+        app.add_plugins(MeshPickingPlugin);
+        app.add_plugins(CameraInputPlugin);
+
+        #[cfg(feature = "dev")]
+        {
+            app.add_plugins(bevy::dev_tools::picking_debug::DebugPickingPlugin);
+            app.insert_resource(bevy::dev_tools::picking_debug::DebugPickingMode::Normal);
         }
+
+        app.insert_resource(MeshPickingSettings {
+            require_markers: true,
+            ..default()
+        });
+
+        app.register_required_components::<Player, Pickable>();
+        app.register_required_components::<PlayableArea, Pickable>();
 
         app.register_type::<AccumulatedInputs>();
 
@@ -25,11 +39,13 @@ impl Plugin for MinigolfInputPlugin {
             ValidateInputSet.run_if(in_state(GameState::Playing)),
         );
 
+        app.add_systems(OnEnter(GameState::Playing), setup);
+
         app.add_systems(Update, check_whether_can_move.in_set(ValidateInputSet));
 
-        app.init_state::<InputState>()
-            .init_state::<InputTarget>()
-            .init_resource::<TouchState>();
+        app.init_state::<InputState>();
+        app.init_state::<InputTarget>();
+        app.init_resource::<TouchState>();
 
         app.configure_sets(
             Update,
@@ -49,9 +65,36 @@ impl Plugin for MinigolfInputPlugin {
                 .in_set(InputSet),
         );
 
-        app.add_observer(on_pointer_down)
-            .add_observer(on_pointer_up);
+        #[cfg(feature = "dev")]
+        {
+            app.add_systems(Update, draw_mesh_picking_target.in_set(InputSet));
+        }
     }
+}
+
+fn setup(mut commands: Commands) {
+    commands.spawn_batch([
+        (
+            Name::new("Bumper placement observer"),
+            StateScoped(GameState::Playing),
+            Observer::new(place_bumper),
+        ),
+        (
+            Name::new("Black hole bumper placement observer"),
+            StateScoped(GameState::Playing),
+            Observer::new(place_black_hole_bumper),
+        ),
+        (
+            Name::new("Pointer down observer"),
+            StateScoped(GameState::Playing),
+            Observer::new(on_pointer_down),
+        ),
+        (
+            Name::new("Pointer up placement observer"),
+            StateScoped(GameState::Playing),
+            Observer::new(on_pointer_up),
+        ),
+    ]);
 }
 
 #[derive(States, Reflect, Default, Debug, Clone, PartialEq, Eq, Hash)]
@@ -62,11 +105,17 @@ enum InputState {
 }
 
 #[derive(States, Reflect, Default, Debug, Clone, PartialEq, Eq, Hash)]
-enum InputTarget {
+pub(crate) enum InputTarget {
     #[default]
     None,
     Camera,
     Movement,
+
+    Teleport,
+    Bumper,
+    BlackHoleBumper,
+    Tornado,
+    Wind,
 }
 
 fn on_pointer_down(
@@ -253,4 +302,91 @@ fn draw_accumulated_inputs(
         end,
         bevy::color::palettes::basic::RED,
     );
+}
+
+fn place_bumper(
+    trigger: Trigger<Pointer<Pressed>>,
+    input_target: Res<State<InputTarget>>,
+    playable_area: Query<Entity, With<PlayableArea>>,
+    pointers: Query<&PointerInteraction>,
+    mut writer: EventWriter<PlayerInput>,
+) {
+    if input_target.get().to_owned() != InputTarget::Bumper {
+        return;
+    }
+
+    let Ok(_) = playable_area.get(trigger.target) else {
+        return;
+    };
+
+    let points = pointers
+        .iter()
+        .filter_map(|interaction| interaction.get_nearest_hit())
+        .filter_map(|(entity, hit)| {
+            if *entity != trigger.target {
+                return None;
+            }
+
+            return hit.position;
+        })
+        .collect::<Vec<_>>();
+
+    if let &[point] = points.as_slice() {
+        writer.write(PlayerInput::Bumper(point));
+    } else {
+        warn!("Could not match point for bumper from {:?}", points);
+    }
+}
+
+fn place_black_hole_bumper(
+    trigger: Trigger<Pointer<Pressed>>,
+    input_target: Res<State<InputTarget>>,
+    playable_area: Query<Entity, With<PlayableArea>>,
+    pointers: Query<&PointerInteraction>,
+    mut writer: EventWriter<PlayerInput>,
+) {
+    if input_target.get().to_owned() != InputTarget::BlackHoleBumper {
+        return;
+    }
+
+    let Ok(_) = playable_area.get(trigger.target) else {
+        return;
+    };
+
+    let points = pointers
+        .iter()
+        .filter_map(|interaction| interaction.get_nearest_hit())
+        .filter_map(|(entity, hit)| {
+            if *entity != trigger.target {
+                return None;
+            }
+
+            return hit.position;
+        })
+        .collect::<Vec<_>>();
+
+    if let &[point] = points.as_slice() {
+        writer.write(PlayerInput::BlackHoleBumper(point));
+    } else {
+        warn!(
+            "Could not match point for black hole bumper from {:?}",
+            points
+        );
+    }
+}
+
+#[cfg(feature = "dev")]
+fn draw_mesh_picking_target(pointers: Query<&PointerInteraction>, mut gizmos: Gizmos) {
+    for (point, normal) in pointers
+        .iter()
+        .filter_map(|interaction| interaction.get_nearest_hit())
+        .filter_map(|(_entity, hit)| hit.position.zip(hit.normal))
+    {
+        gizmos.sphere(point, 0.01, bevy::color::palettes::basic::RED);
+        gizmos.arrow(
+            point,
+            point + normal.normalize() * 0.1,
+            bevy::color::palettes::basic::PURPLE,
+        );
+    }
 }

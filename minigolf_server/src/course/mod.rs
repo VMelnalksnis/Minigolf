@@ -1,10 +1,13 @@
+mod entities;
 mod power_ups;
 pub(crate) mod setup;
 
 use {
     crate::{
         Configuration, GameLayer, GlobalState, LastPlayerPosition, ServerState, ValidPlayerInput,
-        course::{power_ups::PowerUpPlugin, setup::CourseSetupPlugin},
+        course::{
+            entities::CourseEntitiesPlugin, power_ups::PowerUpPlugin, setup::CourseSetupPlugin,
+        },
     },
     avian3d::prelude::*,
     bevy::{app::App, math::DVec3, prelude::*},
@@ -15,6 +18,7 @@ pub(crate) struct CoursePlugin;
 
 impl Plugin for CoursePlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(CourseEntitiesPlugin);
         app.add_plugins(PowerUpPlugin);
         app.add_plugins(CourseSetupPlugin);
 
@@ -23,8 +27,6 @@ impl Plugin for CoursePlugin {
         app.register_type::<HoleSensor>();
         app.register_type::<HoleBoundingBox>();
         app.register_type::<HoleWalls>();
-        app.register_type::<Bumper>();
-        app.register_type::<JumpPad>();
 
         app.register_type::<CurrentHole>();
 
@@ -195,101 +197,12 @@ pub(crate) struct CurrentHole {
 #[derive(SystemSet, Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct PlayingSet;
 
-/// Component for identifying bumper entities.
-#[derive(Component, Reflect, Debug)]
-#[require(
-    RigidBody::Static,
-    CollisionEventsEnabled,
-    CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-    ColliderConstructor::Cylinder{ radius: 0.042672, height: 0.05 })]
-pub(crate) struct Bumper;
-
-/// Component for identifying jump pad entities.
-#[derive(Component, Reflect, Debug)]
-#[require(
-    RigidBody::Static,
-    ColliderConstructor::Cylinder{ radius: 0.085344, height: 0.05 },
-    Sensor)]
-pub(crate) struct JumpPad;
-
 fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
-    commands.spawn_batch([
-        (
-            Name::new("Bumper collision observer"),
-            StateScoped(ServerState::Playing),
-            Observer::new(on_bumper_collision),
-        ),
-        (
-            Name::new("Jump pad collision observer"),
-            StateScoped(ServerState::Playing),
-            Observer::new(on_jump_pad_collision),
-        ),
-    ]);
-
     commands.spawn((
         Name::new("Course scene"),
         DynamicSceneRoot(server.load("courses\\0002.scn.ron")),
         StateScoped(GlobalState::Game),
     ));
-}
-
-fn on_bumper_collision(
-    trigger: Trigger<OnCollisionStart>,
-    bumpers: Query<&Position, With<Bumper>>,
-    players: Query<&Position, With<Player>>,
-    mut commands: Commands,
-    config: Res<Configuration>,
-) {
-    let bumper_entity = trigger.target();
-    let Ok(bumper_position) = bumpers.get(bumper_entity) else {
-        return;
-    };
-
-    let other_entity = trigger.0;
-    let Ok(player_position) = players.get(other_entity) else {
-        return;
-    };
-
-    // todo: probably should handle collisions from above differently
-    let direction = (player_position.0 - bumper_position.0).normalize();
-
-    info!(
-        "Applying bumper effect to player {:?} in direction {:?}",
-        other_entity, direction
-    );
-
-    commands
-        .entity(other_entity)
-        .insert(ExternalImpulse::new(direction * config.bumper_strength).with_persistence(false));
-}
-
-fn on_jump_pad_collision(
-    trigger: Trigger<OnCollisionStart>,
-    jump_pads: Query<(), With<JumpPad>>,
-    players: Query<(), With<Player>>,
-    mut commands: Commands,
-    config: Res<Configuration>,
-) {
-    let jump_pad_entity = trigger.target();
-    let Ok(_) = jump_pads.get(jump_pad_entity) else {
-        return;
-    };
-
-    let other_entity = trigger.0;
-    let Ok(_) = players.get(other_entity) else {
-        return;
-    };
-
-    let direction = DVec3::Y;
-
-    info!(
-        "Applying jump pad effect to player {:?} in direction {:?}",
-        other_entity, direction
-    );
-
-    commands
-        .entity(other_entity)
-        .insert(ExternalImpulse::new(direction * config.jump_pad_strength).with_persistence(false));
 }
 
 fn on_hole_added(

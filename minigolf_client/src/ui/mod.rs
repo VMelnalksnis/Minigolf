@@ -30,10 +30,6 @@ impl Plugin for ClientUiPlugin {
         ));
 
         app.init_state::<ServerState>();
-        app.insert_resource::<MeshPickingSettings>(MeshPickingSettings {
-            require_markers: true,
-            ..default()
-        });
     }
 }
 

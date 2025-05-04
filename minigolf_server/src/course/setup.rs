@@ -2,13 +2,14 @@ use {
     crate::{
         GameLayer, GlobalState,
         course::{
-            Bumper, Course, Hole, HoleBoundingBox, HoleSensor, HoleWalls, JumpPad, PhysicsConfig,
+            Course, CurrentHole, Hole, HoleBoundingBox, HoleSensor, HoleWalls, PhysicsConfig,
+            entities::{BallMagnet, Bumper, JumpPad},
         },
     },
     avian3d::prelude::*,
     bevy::prelude::*,
     bevy_replicon::prelude::*,
-    minigolf::{LevelMesh, PowerUp, PowerUpType},
+    minigolf::{LevelMesh, PlayableArea, PowerUp, PowerUpType},
     rand::Rng,
 };
 
@@ -19,6 +20,15 @@ impl Plugin for CourseSetupPlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<CourseConfiguration>();
         app.init_resource::<CourseConfiguration>();
+
+        app.register_type::<SpawnBumper>();
+        app.add_event::<SpawnBumper>();
+
+        app.register_type::<SpawnBlackHoleBumper>();
+        app.add_event::<SpawnBlackHoleBumper>();
+
+        app.add_observer(spawn_bumper_trigger); // todo
+        app.add_observer(spawn_black_hole_bumper_trigger); // todo
 
         app.add_systems(
             Update,
@@ -126,8 +136,6 @@ fn course_configuration_changed(
         return;
     }
 
-    let bumper_path = "Entities.glb#Mesh1/Primitive0";
-
     let course = commands
         .spawn((
             Name::new("Course"),
@@ -152,6 +160,7 @@ fn course_configuration_changed(
                     start_position: hole_config.start_position,
                 },
                 hole_config.transform,
+                PlayableArea,
                 Replicated,
                 Mesh3d(floor_handle),
                 LevelMesh::from_path(floor_path),
@@ -208,13 +217,10 @@ fn course_configuration_changed(
         });
 
         hole_config.bumpers.iter().for_each(|transform| {
-            commands.spawn((
-                Name::new("Bumper"),
-                Bumper,
-                *transform,
-                Replicated,
-                LevelMesh::from_path(bumper_path),
-                ChildOf(hole_entity),
+            commands.spawn(bumper_bundle(
+                Bumper::permanent(),
+                transform.to_owned(),
+                hole_entity,
             ));
         });
 
@@ -236,4 +242,95 @@ fn course_configuration_changed(
             ));
         });
     }
+}
+
+#[derive(Event, Reflect, Debug)]
+pub(crate) struct SpawnBumper {
+    transform: Transform,
+    permanent: bool,
+}
+
+impl SpawnBumper {
+    /// Spawn a bumper that will remain for the whole game.
+    pub(crate) fn permanent(transform: Transform) -> Self {
+        Self {
+            transform,
+            permanent: true,
+        }
+    }
+
+    /// Spawn a bumper which will despawn after certain amount of hits.
+    pub(crate) fn with_hits(transform: Transform) -> Self {
+        Self {
+            transform,
+            permanent: false,
+        }
+    }
+}
+
+const BUMPER_HITS: usize = 3; // todo: hits based on player count?
+
+fn spawn_bumper_trigger(
+    trigger: Trigger<SpawnBumper>,
+    current_hole: Res<CurrentHole>,
+    mut commands: Commands,
+) {
+    commands.spawn(bumper_bundle(
+        match trigger.permanent {
+            true => Bumper::permanent(),
+            false => Bumper::with_hits(BUMPER_HITS),
+        },
+        trigger.transform,
+        current_hole.hole_entity,
+    ));
+}
+
+fn bumper_bundle(bumper: Bumper, transform: Transform, hole_entity: Entity) -> impl Bundle {
+    let asset_path = "Entities.glb#Mesh1/Primitive0";
+
+    (
+        Name::new("Bumper"),
+        bumper,
+        transform,
+        Replicated,
+        LevelMesh::from_path(asset_path),
+        ChildOf(hole_entity),
+    )
+}
+
+#[derive(Event, Reflect, Debug)]
+pub(crate) struct SpawnBlackHoleBumper {
+    transform: Transform,
+    permanent: bool,
+}
+
+impl SpawnBlackHoleBumper {
+    /// Spawn a black hole bumper which will despawn after certain amount of hits.
+    pub(crate) fn with_hits(transform: Transform) -> Self {
+        Self {
+            transform,
+            permanent: false,
+        }
+    }
+}
+
+fn spawn_black_hole_bumper_trigger(
+    trigger: Trigger<SpawnBlackHoleBumper>,
+    current_hole: Res<CurrentHole>,
+    mut commands: Commands,
+) {
+    let asset_path = "Entities.glb#Mesh1/Primitive0"; // todo: different from default bumper
+
+    commands.spawn((
+        Name::new("Bumper"),
+        match trigger.permanent {
+            true => Bumper::permanent(),
+            false => Bumper::with_hits(BUMPER_HITS),
+        },
+        trigger.transform,
+        Replicated,
+        LevelMesh::from_path(asset_path),
+        ChildOf(current_hole.hole_entity),
+        children![(Name::new("Ball magnet"), BallMagnet::default(),)],
+    ));
 }

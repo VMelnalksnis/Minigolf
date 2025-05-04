@@ -43,7 +43,6 @@ fn main() -> AppExit {
         .register_type::<Configuration>()
         .init_resource::<Configuration>()
         .init_state::<GlobalState>()
-        .enable_state_scoped_entities::<GlobalState>()
         .add_systems(Startup, load_configuration)
         .add_systems(OnExit(ServerState::WaitingForGame), set_game)
         .add_systems(OnEnter(ServerState::WaitingForGame), set_idle)
@@ -66,6 +65,7 @@ fn main() -> AppExit {
 }
 
 #[derive(States, Default, Clone, Eq, PartialEq, Hash, Debug)]
+#[states(scoped_entities)]
 enum ServerState {
     #[default]
     WaitingForLobby,
@@ -135,6 +135,7 @@ pub(crate) struct PlayerSession {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, States)]
+#[states(scoped_entities)]
 pub(crate) enum GlobalState {
     #[default]
     Idle,

@@ -1,7 +1,10 @@
 use {
     crate::{
         LastPlayerPosition, ServerState, ValidPlayerInput,
-        course::{Configuration, CurrentHole, HoleCompleted, HoleWalls, PlayingSet},
+        course::{
+            Configuration, CurrentHole, HoleCompleted, HoleWalls, PlayingSet,
+            setup::{SpawnBlackHoleBumper, SpawnBumper},
+        },
     },
     avian3d::prelude::*,
     bevy::{math::DVec3, prelude::*},
@@ -66,6 +69,20 @@ fn apply_power_ups(
                 for other_player in players.iter().filter(|e| *e != player) {
                     commands.entity(other_player).insert(StickyBall);
                 }
+            }
+
+            PlayerInput::Bumper(translation) => {
+                // todo: have to validate and adjust the translation
+                commands.trigger(SpawnBumper::with_hits(Transform::from_translation(
+                    translation,
+                )));
+            }
+
+            PlayerInput::BlackHoleBumper(translation) => {
+                // todo: have to validate and adjust the translation
+                commands.trigger(SpawnBlackHoleBumper::with_hits(
+                    Transform::from_translation(translation),
+                ));
             }
 
             PlayerInput::Wind(direction) => {

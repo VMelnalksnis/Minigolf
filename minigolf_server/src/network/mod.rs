@@ -48,8 +48,7 @@ impl Plugin for ServerNetworkPlugin {
             .add_observer(on_disconnected)
             .add_event::<PlayerAuthenticated>();
 
-        app.init_state::<ServerState>()
-            .enable_state_scoped_entities::<ServerState>();
+        app.init_state::<ServerState>();
 
         app.init_resource::<LobbyServerConnector>()
             .configure_sets(

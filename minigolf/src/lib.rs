@@ -2,10 +2,10 @@ pub mod lobby;
 
 use {
     crate::lobby::PlayerId,
-    bevy::prelude::*,
-    bevy_replicon::prelude::*,
+    bevy::{prelude::*, reflect::GetTypeRegistration},
+    bevy_replicon::{prelude::*, shared::replication::replication_registry::command_fns::MutWrite},
     rand::{distr::StandardUniform, prelude::*},
-    serde::{Deserialize, Serialize},
+    serde::{Deserialize, Serialize, de::DeserializeOwned},
     uuid::Uuid,
 };
 
@@ -18,6 +18,7 @@ pub struct MinigolfPlugin;
 
 /// Whether the game is currently being simulated or not.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, States)]
+#[states(scoped_entities)]
 pub enum GameState {
     /// Game is not being simulated.
     #[default]
@@ -28,30 +29,23 @@ pub enum GameState {
 
 impl Plugin for MinigolfPlugin {
     fn build(&self, app: &mut App) {
-        app.register_type::<Player>()
-            .register_type::<LevelMesh>()
-            .register_type::<PlayerInput>()
-            .register_type::<PowerUp>()
-            .register_type::<PlayerPowerUps>();
+        app.init_state::<GameState>();
 
-        app.register_type::<PlayerScore>();
+        app.replicate::<Name>();
+        app.replicate::<Transform>();
+        app.replicate::<GlobalTransform>();
 
-        app.init_state::<GameState>()
-            .enable_state_scoped_entities::<GameState>();
+        register_replicated::<Player>(app);
+        register_replicated::<PlayerScore>(app);
+        register_replicated::<PowerUp>(app);
+        register_replicated::<PlayerPowerUps>(app);
 
-        app.replicate::<Player>()
-            .replicate::<PowerUp>()
-            .replicate::<PlayerPowerUps>()
-            .replicate::<GlobalTransform>()
-            .replicate::<Transform>()
-            .replicate::<LevelMesh>()
-            .replicate::<Name>();
+        register_replicated::<LevelMesh>(app);
+        register_replicated::<PlayableArea>(app);
 
-        app.replicate::<PlayerScore>();
-
-        app.add_client_event::<AuthenticatePlayer>(Channel::Ordered)
-            .add_client_event::<PlayerInput>(Channel::Ordered)
-            .add_server_event::<RequestAuthentication>(Channel::Ordered);
+        app.add_server_event::<RequestAuthentication>(Channel::Ordered);
+        app.add_client_event::<AuthenticatePlayer>(Channel::Ordered);
+        app.add_client_event::<PlayerInput>(Channel::Ordered);
     }
 }
 
@@ -93,6 +87,10 @@ impl Default for PlayerCredentials {
         }
     }
 }
+
+/// Marker component for entities that the player can interact with.
+#[derive(Component, Reflect, Serialize, Deserialize, Copy, Clone, Debug)]
+pub struct PlayableArea;
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Debug)]
 #[require(StateScoped::<GameState>(GameState::Playing))]
@@ -229,9 +227,9 @@ impl Default for PlayerPowerUps {
     fn default() -> Self {
         PlayerPowerUps {
             power_ups: vec![
-                PowerUpType::HoleMagnet,
-                PowerUpType::StickyBall,
-                PowerUpType::StickyWalls,
+                PowerUpType::BlackHoleBumper,
+                rand::rng().random::<PowerUpType>(),
+                rand::rng().random::<PowerUpType>(),
             ],
         }
     }
@@ -257,9 +255,9 @@ pub enum PowerUpType {
     ReversiBall, // todo
 
     // Targeting the environment
-    Bumper,          // todo
-    BlackHoleBumper, // todo
-    Tornado,         // todo
+    Bumper,
+    BlackHoleBumper,
+    Tornado, // todo
     Wind,
     StickyWalls,
     IceRink,
@@ -268,9 +266,26 @@ pub enum PowerUpType {
 impl Distribution<PowerUpType> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> PowerUpType {
         use self::PowerUpType::*;
-        let options = [HoleMagnet, StickyBall, Wind, StickyWalls, IceRink];
+        let options = [
+            HoleMagnet,
+            StickyBall,
+            Bumper,
+            BlackHoleBumper,
+            Wind,
+            StickyWalls,
+            IceRink,
+        ];
 
         let index = rng.random_range(0..options.len());
         options[index]
     }
+}
+
+fn register_replicated<TComponent: Component + GetTypeRegistration + Serialize + DeserializeOwned>(
+    app: &mut App,
+) where
+    <TComponent as bevy::prelude::Component>::Mutability: MutWrite<TComponent>,
+{
+    app.register_type::<TComponent>();
+    app.replicate::<TComponent>();
 }

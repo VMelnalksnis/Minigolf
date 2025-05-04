@@ -27,7 +27,6 @@ fn main() -> AppExit {
             DefaultPlugins,
             ClientUiPlugin,
             ClientNetworkPlugin,
-            MeshPickingPlugin,
             MinigolfPlugin,
             MinigolfInputPlugin,
         ))
@@ -174,11 +173,9 @@ fn on_player_added(
             .collect::<Vec<_>>();
 
         if let &[_] = x.as_slice() {
-            commands.entity(entity).insert((
-                LocalPlayer,
-                AccumulatedInputs::default(),
-                Pickable::default(),
-            ));
+            commands
+                .entity(entity)
+                .insert((LocalPlayer, AccumulatedInputs::default()));
         }
     }
 }
