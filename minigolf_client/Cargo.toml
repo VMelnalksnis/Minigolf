@@ -20,4 +20,4 @@ aeronet_replicon = { workspace = true, features = ["client"] }
 web-sys = { workspace = true, features = ["Window", "Document", "Element", "HtmlCanvasElement", "CssStyleDeclaration"] }
 
 [features]
-dynamic_linking = ["bevy/dynamic_linking"]
+dev = ["bevy/bevy_dev_tools", "bevy/dynamic_linking"]

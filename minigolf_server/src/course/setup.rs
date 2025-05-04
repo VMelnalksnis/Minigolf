@@ -51,7 +51,7 @@ pub(crate) struct HoleConfiguration {
 
 /// Updates [CourseConfiguration] resource with the current values of the course,
 /// and it's child entities.
-#[cfg(feature = "ui")]
+#[cfg(feature = "dev")]
 pub(crate) fn capture_course_state(
     mut config: ResMut<CourseConfiguration>,
     course: Single<&Course>,
@@ -91,7 +91,7 @@ pub(crate) fn capture_course_state(
         .collect::<Vec<_>>();
 }
 
-#[cfg(feature = "ui")]
+#[cfg(feature = "dev")]
 fn map_single_component<TComponent: Component + Clone, TTFilter: Component>(
     children: &Children,
     query: Query<&TComponent, With<TTFilter>>,
@@ -104,7 +104,7 @@ fn map_single_component<TComponent: Component + Clone, TTFilter: Component>(
         .to_owned()
 }
 
-#[cfg(feature = "ui")]
+#[cfg(feature = "dev")]
 fn map_components<TComponent: Component + Clone, TTFilter: Component>(
     children: &Children,
     query: Query<&TComponent, With<TTFilter>>,
