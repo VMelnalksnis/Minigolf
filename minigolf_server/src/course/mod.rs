@@ -1,5 +1,5 @@
 mod entities;
-mod power_ups;
+pub(crate) mod power_ups;
 pub(crate) mod setup;
 
 use {

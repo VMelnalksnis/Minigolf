@@ -75,6 +75,11 @@ impl Plugin for MinigolfInputPlugin {
 fn setup(mut commands: Commands) {
     commands.spawn_batch([
         (
+            Name::new("Teleport observer"),
+            StateScoped(GameState::Playing),
+            Observer::new(teleport),
+        ),
+        (
             Name::new("Bumper placement observer"),
             StateScoped(GameState::Playing),
             Observer::new(place_bumper),
@@ -304,6 +309,30 @@ fn draw_accumulated_inputs(
     );
 }
 
+fn teleport(
+    trigger: Trigger<Pointer<Pressed>>,
+    input_target: Res<State<InputTarget>>,
+    playable_area: Query<Entity, With<PlayableArea>>,
+    pointers: Query<&PointerInteraction>,
+    mut writer: EventWriter<PlayerInput>,
+) {
+    if input_target.get().to_owned() != InputTarget::Teleport {
+        return;
+    }
+
+    let Ok(_) = playable_area.get(trigger.target) else {
+        return;
+    };
+
+    let points = get_points(trigger.target, pointers);
+
+    if let &[point] = points.as_slice() {
+        writer.write(PlayerInput::Teleport(point));
+    } else {
+        warn!("Could not match point for bumper from {:?}", points);
+    }
+}
+
 fn place_bumper(
     trigger: Trigger<Pointer<Pressed>>,
     input_target: Res<State<InputTarget>>,
@@ -319,17 +348,7 @@ fn place_bumper(
         return;
     };
 
-    let points = pointers
-        .iter()
-        .filter_map(|interaction| interaction.get_nearest_hit())
-        .filter_map(|(entity, hit)| {
-            if *entity != trigger.target {
-                return None;
-            }
-
-            return hit.position;
-        })
-        .collect::<Vec<_>>();
+    let points = get_points(trigger.target, pointers);
 
     if let &[point] = points.as_slice() {
         writer.write(PlayerInput::Bumper(point));
@@ -353,17 +372,7 @@ fn place_black_hole_bumper(
         return;
     };
 
-    let points = pointers
-        .iter()
-        .filter_map(|interaction| interaction.get_nearest_hit())
-        .filter_map(|(entity, hit)| {
-            if *entity != trigger.target {
-                return None;
-            }
-
-            return hit.position;
-        })
-        .collect::<Vec<_>>();
+    let points = get_points(trigger.target, pointers);
 
     if let &[point] = points.as_slice() {
         writer.write(PlayerInput::BlackHoleBumper(point));
@@ -373,6 +382,20 @@ fn place_black_hole_bumper(
             points
         );
     }
+}
+
+fn get_points(target: Entity, pointers: Query<&PointerInteraction>) -> Vec<Vec3> {
+    pointers
+        .iter()
+        .filter_map(|interaction| interaction.get_nearest_hit())
+        .filter_map(|(entity, hit)| {
+            if *entity != target {
+                return None;
+            }
+
+            return hit.position;
+        })
+        .collect::<Vec<_>>()
 }
 
 #[cfg(feature = "dev")]

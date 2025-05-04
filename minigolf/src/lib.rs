@@ -114,6 +114,8 @@ pub enum PlayerInput {
     Teleport(Vec3),
     /// Apply an attractive force between the hole and the players ball using the [PowerUpType::HoleMagnet] power up.
     HoleMagnet,
+    /// Apply hit force at a 45 degree angle for the next hit using the [PowerUpType::ChipShot] power up.
+    ChipShot,
 
     /// Steal a power up from the specified player using the [PowerUpType::StealPowerUp] power up.
     StealPowerUp(PlayerId),
@@ -152,6 +154,7 @@ impl PlayerInput {
             Move(_) => None,
             Teleport(_) => Some(PowerUpType::Teleport),
             HoleMagnet => Some(PowerUpType::HoleMagnet),
+            ChipShot => Some(PowerUpType::ChipShot),
             StealPowerUp(_) => Some(PowerUpType::StealPowerUp),
             StickyBall => Some(PowerUpType::StickyBall),
             TinyBall => Some(PowerUpType::TinyBall),
@@ -226,22 +229,30 @@ impl PlayerPowerUps {
 impl Default for PlayerPowerUps {
     fn default() -> Self {
         PlayerPowerUps {
-            power_ups: vec![
-                PowerUpType::BlackHoleBumper,
-                rand::rng().random::<PowerUpType>(),
-                rand::rng().random::<PowerUpType>(),
-            ],
+            power_ups: IMPLEMENTED_POWER_UPS.to_vec(),
         }
     }
 }
 
+const IMPLEMENTED_POWER_UPS: [PowerUpType; 9] = [
+    PowerUpType::Teleport,
+    PowerUpType::HoleMagnet,
+    PowerUpType::ChipShot,
+    PowerUpType::StickyBall,
+    PowerUpType::Bumper,
+    PowerUpType::BlackHoleBumper,
+    PowerUpType::Wind,
+    PowerUpType::StickyWalls,
+    PowerUpType::IceRink,
+];
+
 #[derive(Reflect, Serialize, Deserialize, PartialEq, Eq, Copy, Clone, Debug)]
 pub enum PowerUpType {
     // Targeting self
-    Teleport, // todo
+    Teleport,
     HoleMagnet,
-    GhostBall,     // todo
-    ChipShot,      // todo
+    GhostBall, // todo
+    ChipShot,
     BallRepellent, // todo
 
     // Targeting specific player
@@ -265,19 +276,8 @@ pub enum PowerUpType {
 
 impl Distribution<PowerUpType> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> PowerUpType {
-        use self::PowerUpType::*;
-        let options = [
-            HoleMagnet,
-            StickyBall,
-            Bumper,
-            BlackHoleBumper,
-            Wind,
-            StickyWalls,
-            IceRink,
-        ];
-
-        let index = rng.random_range(0..options.len());
-        options[index]
+        let index = rng.random_range(0..IMPLEMENTED_POWER_UPS.len());
+        IMPLEMENTED_POWER_UPS[index]
     }
 }
 

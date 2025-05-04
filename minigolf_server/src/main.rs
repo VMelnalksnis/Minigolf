@@ -1,7 +1,7 @@
 use {
     crate::{
         config::ServerPlugin,
-        course::{CoursePlugin, CurrentHole, HoleSensor},
+        course::{CoursePlugin, CurrentHole, HoleSensor, power_ups::ChipShotMarker},
         network::{PlayerAuthenticated, ServerNetworkPlugin},
     },
     aeronet::io::connection::Disconnected,
@@ -251,17 +251,26 @@ fn recv_input(
     }
 }
 
-fn move_player(mut reader: EventReader<ValidPlayerInput>, mut commands: Commands) {
+fn move_player(
+    mut reader: EventReader<ValidPlayerInput>,
+    chip_shot: Query<&ChipShotMarker>,
+    mut commands: Commands,
+) {
     for &ValidPlayerInput { ref input, player } in reader.read() {
         let PlayerInput::Move(movement) = input else {
             continue;
         };
 
-        let force_vec = Vec3::new(movement.x, 0.0, movement.y).clamp_length_max(10.0);
+        let mut force_vec = Vec3::new(movement.x, 0.0, movement.y).clamp_length_max(10.0);
+        force_vec.y = match chip_shot.get(player) {
+            Ok(_) => force_vec.length(),
+            Err(_) => 0.0,
+        };
 
         commands
             .entity(player)
-            .insert(ExternalImpulse::new(DVec3::from(force_vec)));
+            .insert(ExternalImpulse::new(DVec3::from(force_vec)))
+            .remove::<ChipShotMarker>();
     }
 }
 

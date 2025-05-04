@@ -6,7 +6,7 @@ use {
             setup::{SpawnBlackHoleBumper, SpawnBumper},
         },
     },
-    avian3d::prelude::*,
+    avian3d::{math::Vector, prelude::*},
     bevy::{math::DVec3, prelude::*},
     minigolf::{Player, PlayerInput, PlayerPowerUps, PowerUp},
 };
@@ -18,6 +18,7 @@ impl Plugin for PowerUpPlugin {
         app.register_type::<HoleMagnetPowerUp>();
         app.register_type::<StickyWalls>();
         app.register_type::<StickyBall>();
+        app.register_type::<ChipShotMarker>();
 
         app.add_systems(OnEnter(ServerState::Playing), setup_observers);
 
@@ -49,6 +50,10 @@ fn setup_observers(mut commands: Commands) {
     ));
 }
 
+/// Indicates that [minigolf::PowerUpType::ChipShot] should apply to the next hit for the player.
+#[derive(Component, Reflect, Debug)]
+pub(crate) struct ChipShotMarker;
+
 fn apply_power_ups(
     mut reader: EventReader<ValidPlayerInput>,
     current_hole: Res<CurrentHole>,
@@ -61,8 +66,19 @@ fn apply_power_ups(
         match input {
             PlayerInput::Move(_) => {}
 
+            PlayerInput::Teleport(translation) => {
+                let mut vec = Vector::from(translation);
+                vec.y = vec.y + 0.05;
+
+                commands.entity(player).insert(Position(vec));
+            }
+
             PlayerInput::HoleMagnet => {
                 commands.entity(player).insert(HoleMagnetPowerUp);
+            }
+
+            PlayerInput::ChipShot => {
+                commands.entity(player).insert(ChipShotMarker);
             }
 
             PlayerInput::StickyBall => {

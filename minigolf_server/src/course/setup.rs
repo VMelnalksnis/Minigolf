@@ -251,14 +251,6 @@ pub(crate) struct SpawnBumper {
 }
 
 impl SpawnBumper {
-    /// Spawn a bumper that will remain for the whole game.
-    pub(crate) fn permanent(transform: Transform) -> Self {
-        Self {
-            transform,
-            permanent: true,
-        }
-    }
-
     /// Spawn a bumper which will despawn after certain amount of hits.
     pub(crate) fn with_hits(transform: Transform) -> Self {
         Self {

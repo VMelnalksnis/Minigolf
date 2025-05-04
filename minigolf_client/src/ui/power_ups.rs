@@ -53,6 +53,14 @@ fn power_up_ui(
                         info!("Use power up {:?}", power_up_type);
 
                         match power_up_type {
+                            Teleport => {
+                                input_target.set(InputTarget::Teleport);
+                            }
+
+                            ChipShot => {
+                                writer.write(PlayerInput::ChipShot);
+                            }
+
                             HoleMagnet => {
                                 writer.write(PlayerInput::HoleMagnet);
                             }
