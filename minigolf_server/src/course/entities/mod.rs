@@ -71,7 +71,7 @@ fn apply_bumper_impulse(
         return;
     };
 
-    let other_entity = trigger.0;
+    let other_entity = trigger.collider;
     let Ok(player_position) = players.get(other_entity) else {
         return;
     };
@@ -120,7 +120,7 @@ fn apply_jump_pad_impulse(
         return;
     };
 
-    let other_entity = trigger.0;
+    let other_entity = trigger.collider;
     let Ok(_) = players.get(other_entity) else {
         return;
     };

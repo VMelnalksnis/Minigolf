@@ -241,7 +241,7 @@ fn on_player_collided(
         return;
     }
 
-    let other_entity = trigger.0;
+    let other_entity = trigger.collider;
     let Ok(_) = walls.get(other_entity) else {
         return;
     };
