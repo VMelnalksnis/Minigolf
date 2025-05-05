@@ -1,12 +1,12 @@
 use {
     crate::{
-        PlayerCredentials,
+        CourseId, PlayerCredentials,
         lobby::{LobbyId, PlayerId},
     },
     serde::{Deserialize, Serialize},
 };
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ClientPacket {
     Hello,
     Available(String),
@@ -14,10 +14,17 @@ pub enum ClientPacket {
     GameCreated(LobbyId),
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ServerPacket {
     Hello,
-    CreateGame(LobbyId, Vec<(PlayerId, PlayerCredentials)>),
+    CreateGame(CreateGameRequest),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CreateGameRequest {
+    pub lobby_id: LobbyId,
+    pub players: Vec<(PlayerId, PlayerCredentials)>,
+    pub courses: Vec<CourseId>,
 }
 
 impl Into<String> for ClientPacket {

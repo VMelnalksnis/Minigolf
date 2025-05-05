@@ -1,8 +1,8 @@
 use {
     crate::{
-        LastPlayerPosition, ServerState, ValidPlayerInput,
+        HoleState, LastPlayerPosition, PlayingSystems, ServerState, ValidPlayerInput,
         course::{
-            Configuration, CurrentHole, HoleCompleted, HoleWalls, PlayingSet,
+            Configuration, CurrentHole, HoleWalls,
             setup::{SpawnBlackHoleBumper, SpawnBumper},
         },
     },
@@ -22,7 +22,7 @@ impl Plugin for PowerUpPlugin {
 
         app.add_systems(OnEnter(ServerState::Playing), setup_observers);
 
-        app.add_systems(Update, apply_power_ups.in_set(PlayingSet));
+        app.add_systems(Update, apply_power_ups.in_set(PlayingSystems));
 
         app.add_systems(
             FixedUpdate,
@@ -31,18 +31,14 @@ impl Plugin for PowerUpPlugin {
                 apply_hole_magnet,
                 remove_hole_magnet,
             )
-                .in_set(PlayingSet),
+                .in_set(PlayingSystems),
         );
+
+        app.add_systems(OnEnter(HoleState::Completed), remove_sticky_ball);
     }
 }
 
 fn setup_observers(mut commands: Commands) {
-    commands.spawn((
-        Name::new("Remove sticky ball observer"),
-        StateScoped(ServerState::Playing),
-        Observer::new(remove_sticky_ball),
-    ));
-
     commands.spawn((
         Name::new("Apply sticky effects observer"),
         StateScoped(ServerState::Playing),
@@ -265,11 +261,7 @@ fn on_player_collided(
     angular.0 = DVec3::ZERO;
 }
 
-fn remove_sticky_ball(
-    _trigger: Trigger<HoleCompleted>,
-    players: Query<Entity, With<Player>>,
-    mut commands: Commands,
-) {
+fn remove_sticky_ball(players: Query<Entity, With<Player>>, mut commands: Commands) {
     players.iter().for_each(|entity| {
         commands.entity(entity).remove::<StickyBall>();
     });

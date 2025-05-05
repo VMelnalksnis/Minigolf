@@ -1,6 +1,6 @@
 use {
     crate::{
-        GameLayer, GlobalState,
+        CourseState, GameLayer,
         course::{
             Course, CurrentHole, Hole, HoleBoundingBox, HoleSensor, HoleWalls, PhysicsConfig,
             entities::{BallMagnet, Bumper, JumpPad},
@@ -143,7 +143,7 @@ fn course_configuration_changed(
             Transform::default(),
             Visibility::default(),
             Replicated,
-            StateScoped(GlobalState::Game),
+            StateScoped(CourseState::Playing),
         ))
         .id();
 

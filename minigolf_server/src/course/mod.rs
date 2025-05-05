@@ -4,14 +4,15 @@ pub(crate) mod setup;
 
 use {
     crate::{
-        Configuration, GameLayer, GlobalState, LastPlayerPosition, ServerState, ValidPlayerInput,
+        Configuration, CourseState, GameLayer, GameState, HoleState, LastPlayerPosition,
+        LoadingCourseSystems, PlayingSystems, ServerState, ValidPlayerInput,
         course::{
             entities::CourseEntitiesPlugin, power_ups::PowerUpPlugin, setup::CourseSetupPlugin,
         },
     },
     avian3d::prelude::*,
     bevy::{app::App, math::DVec3, prelude::*},
-    minigolf::{Player, PlayerInput, PlayerScore, PowerUp},
+    minigolf::{CourseDetails, Player, PlayerInput, PlayerScore, PowerUp},
 };
 
 pub(crate) struct CoursePlugin;
@@ -21,6 +22,8 @@ impl Plugin for CoursePlugin {
         app.add_plugins(CourseEntitiesPlugin);
         app.add_plugins(PowerUpPlugin);
         app.add_plugins(CourseSetupPlugin);
+
+        app.register_type::<GameConfig>();
 
         app.register_type::<Course>();
         app.register_type::<Hole>();
@@ -36,19 +39,15 @@ impl Plugin for CoursePlugin {
 
         app.add_observer(on_hole_added);
 
-        app.add_systems(OnEnter(ServerState::WaitingForPlayers), setup_course);
+        app.add_systems(OnEnter(CourseState::Waiting), (pause_physics, setup_course));
+        app.add_systems(Update, test.in_set(LoadingCourseSystems));
 
-        app.add_systems(OnEnter(ServerState::Playing), setup_playing);
+        app.add_systems(OnEnter(CourseState::Playing), resume_physics);
 
-        app.configure_sets(Update, PlayingSet.run_if(in_state(ServerState::Playing)));
-        app.configure_sets(
-            FixedUpdate,
-            PlayingSet.run_if(in_state(ServerState::Playing)),
-        );
-
+        app.add_systems(OnEnter(HoleState::Playing), reset_player_position);
         app.add_systems(
             Update,
-            (increment_score, log_score_changes).in_set(PlayingSet),
+            (increment_score, log_score_changes).in_set(PlayingSystems),
         );
 
         app.add_systems(
@@ -58,37 +57,82 @@ impl Plugin for CoursePlugin {
                 handle_hole_bounding_box,
                 current_hole_modified,
             )
-                .in_set(PlayingSet),
+                .in_set(PlayingSystems),
+        );
+
+        app.add_systems(OnEnter(HoleState::Completed), on_hole_completed);
+        app.add_systems(
+            OnEnter(CourseState::Completed),
+            (remove_current_hole, on_course_completed),
         );
     }
 }
 
-#[derive(Event, Reflect, Debug)]
-pub(crate) struct HoleCompleted;
+fn remove_current_hole(mut commands: Commands) {
+    commands.remove_resource::<CurrentHole>();
+}
 
-#[derive(Event, Reflect, Debug)]
-pub(crate) struct CourseCompleted;
+fn pause_physics(mut time: ResMut<Time<Physics>>) {
+    time.pause();
+}
 
-fn setup_playing(mut commands: Commands) {
-    commands.spawn_batch([
-        (
-            Name::new("Course Completed observer"),
-            Observer::new(on_course_completed),
-            StateScoped(ServerState::Playing),
-        ),
-        (
-            Name::new("Hole Completed observer"),
-            Observer::new(on_hole_completed),
-            StateScoped(ServerState::Playing),
-        ),
-    ]);
+fn resume_physics(mut time: ResMut<Time<Physics>>) {
+    time.unpause();
+}
+
+fn reset_player_position(
+    mut players: Query<(&mut Position, &mut LastPlayerPosition), With<Player>>,
+    hole: Res<CurrentHole>,
+) {
+    for (mut position, mut last_position) in &mut players {
+        position.0 = hole.hole.start_position.into();
+
+        last_position.position = hole.hole.start_position;
+        last_position.rotation = Quat::IDENTITY;
+    }
 }
 
 fn on_course_completed(
-    _trigger: Trigger<CourseCompleted>,
-    mut state: ResMut<NextState<ServerState>>,
+    course_scene: Single<Entity, With<CourseSceneMarker>>,
+    mut config: ResMut<GameConfig>,
+    mut course_state: ResMut<NextState<CourseState>>,
+    mut game_state: ResMut<NextState<GameState>>,
+    mut commands: Commands,
 ) {
-    state.set(ServerState::WaitingForGame);
+    if let Ok(()) = config.next_course() {
+        commands.entity(course_scene.into_inner()).despawn();
+        course_state.set(CourseState::Waiting);
+    } else {
+        game_state.set(GameState::Completed);
+    }
+}
+
+#[derive(Resource, Reflect, Default, Debug)]
+pub(crate) struct GameConfig {
+    courses: Vec<CourseDetails>,
+    current: usize,
+}
+
+impl GameConfig {
+    pub(crate) fn new(courses: Vec<CourseDetails>) -> Self {
+        GameConfig {
+            courses,
+            current: 0,
+        }
+    }
+
+    pub(crate) fn current(&self) -> &CourseDetails {
+        &self.courses[self.current]
+    }
+
+    pub(crate) fn next_course(&mut self) -> Result<(), ()> {
+        if self.current >= self.courses.len() - 1 {
+            Err(())
+        } else {
+            self.current = self.current + 1;
+            Ok(())
+        }
+    }
 }
 
 #[derive(Resource, Reflect)]
@@ -194,15 +238,24 @@ pub(crate) struct CurrentHole {
     pub(crate) players: Vec<Player>,
 }
 
-#[derive(SystemSet, Clone, PartialEq, Eq, Hash, Debug)]
-pub(crate) struct PlayingSet;
+#[derive(Component, Reflect, Debug)]
+struct CourseSceneMarker;
 
-fn setup_course(mut commands: Commands, server: Res<AssetServer>) {
+fn setup_course(mut commands: Commands, server: Res<AssetServer>, config: Res<GameConfig>) {
+    let course_id = &config.current().id;
+
     commands.spawn((
         Name::new("Course scene"),
-        DynamicSceneRoot(server.load("courses\\0002.scn.ron")),
-        StateScoped(GlobalState::Game),
+        DynamicSceneRoot(server.load(format!("courses\\{course_id}.scn.ron"))),
+        StateScoped(ServerState::Playing),
+        CourseSceneMarker,
     ));
+}
+
+fn test(hole: Option<Res<CurrentHole>>, mut state: ResMut<NextState<CourseState>>) {
+    if let Some(_) = hole {
+        state.set(CourseState::Playing);
+    }
 }
 
 fn on_hole_added(
@@ -319,7 +372,7 @@ fn handle_hole_bounding_box(
 fn current_hole_modified(
     current_hole: Res<CurrentHole>,
     players: Query<(), With<Player>>,
-    mut commands: Commands,
+    mut state: ResMut<NextState<HoleState>>,
 ) {
     if !current_hole.is_changed() {
         return;
@@ -339,16 +392,15 @@ fn current_hole_modified(
         return;
     }
 
-    commands.trigger(HoleCompleted);
+    state.set(HoleState::Completed);
 }
 
 fn on_hole_completed(
-    _trigger: Trigger<HoleCompleted>,
-    mut current_hole: ResMut<CurrentHole>,
-    mut players: Query<(&mut LastPlayerPosition, &mut Transform), With<Player>>,
     course: Query<&Course>,
     holes: Query<&Hole>,
-    mut commands: Commands,
+    mut current_hole: ResMut<CurrentHole>,
+    mut hole_state: ResMut<NextState<HoleState>>,
+    mut course_state: ResMut<NextState<CourseState>>,
 ) {
     let _ = current_hole.players.drain(..).collect::<Vec<_>>();
     let course = course.single().unwrap();
@@ -366,7 +418,7 @@ fn on_hole_completed(
         .next();
 
     let Some(next_hole_entity) = next_hole else {
-        commands.trigger(CourseCompleted);
+        course_state.set(CourseState::Completed);
         return;
     };
 
@@ -374,13 +426,5 @@ fn on_hole_completed(
     current_hole.hole_entity = next_hole_entity;
     current_hole.hole = *next_hole;
 
-    players
-        .iter_mut()
-        .for_each(|(mut last_position, mut transform)| {
-            transform.scale = Vec3::splat(1.0);
-            transform.translation = next_hole.start_position;
-
-            last_position.position = next_hole.start_position;
-            last_position.rotation = Quat::IDENTITY;
-        });
+    hole_state.set(HoleState::Playing);
 }

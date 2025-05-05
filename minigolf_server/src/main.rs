@@ -8,7 +8,7 @@ use {
     avian3d::prelude::*,
     bevy::{math::DVec3, prelude::*},
     bevy_replicon::prelude::*,
-    minigolf::{MinigolfPlugin, Player, PlayerInput, PlayerPowerUps, PlayerScore},
+    minigolf::{CourseDetails, MinigolfPlugin, Player, PlayerInput, PlayerPowerUps, PlayerScore},
     std::{
         net::{IpAddr, Ipv6Addr, SocketAddr},
         path::PathBuf,
@@ -29,6 +29,7 @@ fn main() -> AppExit {
             PhysicsPlugins::default(),
             PhysicsDebugPlugin::default(),
         ))
+        .add_plugins(StatesPlugin)
         .add_plugins(CoursePlugin)
         .add_observer(on_disconnected)
         .insert_resource(Time::<Fixed>::from_hz(128.0))
@@ -42,37 +43,142 @@ fn main() -> AppExit {
         })
         .register_type::<Configuration>()
         .init_resource::<Configuration>()
-        .init_state::<GlobalState>()
         .add_systems(Startup, load_configuration)
-        .add_systems(OnExit(ServerState::WaitingForGame), set_game)
-        .add_systems(OnEnter(ServerState::WaitingForGame), set_idle)
         .add_systems(FixedPreUpdate, bevy_replicon::server::increment_tick)
         .add_systems(FixedUpdate, recv_input.run_if(server_or_singleplayer))
         .add_systems(
             Update,
-            on_player_authenticated.run_if(in_state(ServerState::WaitingForPlayers)),
+            on_player_authenticated.in_set(WaitingForPlayersSystems),
         )
-        .add_systems(
-            FixedUpdate,
-            player_can_move.run_if(in_state(ServerState::Playing)),
-        )
-        .add_systems(
-            Update,
-            (move_player, reset_can_move).run_if(in_state(ServerState::Playing)),
-        )
+        .add_systems(FixedUpdate, player_can_move.in_set(PlayingSystems))
+        .add_systems(Update, (move_player, reset_can_move).in_set(PlayingSystems))
         .add_event::<ValidPlayerInput>()
         .run()
 }
 
-#[derive(States, Default, Clone, Eq, PartialEq, Hash, Debug)]
+struct StatesPlugin;
+
+impl Plugin for StatesPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_state::<ServerState>();
+        app.add_sub_state::<GameState>();
+        app.add_sub_state::<CourseState>();
+        app.add_sub_state::<HoleState>();
+
+        app.register_type::<ServerState>();
+        app.register_type::<GameState>();
+        app.register_type::<CourseState>();
+        app.register_type::<HoleState>();
+
+        app.configure_sets(
+            Update,
+            ConnectingToLobbySystems.run_if(in_state(ServerState::WaitingForLobby)),
+        );
+        app.configure_sets(
+            FixedUpdate,
+            ConnectingToLobbySystems.run_if(in_state(ServerState::WaitingForLobby)),
+        );
+
+        app.configure_sets(
+            Update,
+            WaitingForGameSystems.run_if(in_state(ServerState::WaitingForGame)),
+        );
+        app.configure_sets(
+            FixedUpdate,
+            WaitingForGameSystems.run_if(in_state(ServerState::WaitingForGame)),
+        );
+
+        app.configure_sets(
+            Update,
+            WaitingForPlayersSystems.run_if(in_state(GameState::Waiting)),
+        );
+        app.configure_sets(
+            FixedUpdate,
+            WaitingForPlayersSystems.run_if(in_state(GameState::Waiting)),
+        );
+
+        app.configure_sets(
+            Update,
+            LoadingCourseSystems.run_if(in_state(CourseState::Waiting)),
+        );
+        app.configure_sets(
+            FixedUpdate,
+            LoadingCourseSystems.run_if(in_state(CourseState::Waiting)),
+        );
+
+        app.configure_sets(Update, PlayingSystems.run_if(in_state(HoleState::Playing)));
+        app.configure_sets(
+            FixedUpdate,
+            PlayingSystems.run_if(in_state(HoleState::Playing)),
+        );
+
+        app.add_systems(
+            OnEnter(GameState::Completed),
+            |mut state: ResMut<NextState<ServerState>>| state.set(ServerState::WaitingForGame),
+        );
+    }
+}
+
+#[derive(States, Reflect, Default, Clone, Eq, PartialEq, Hash, Debug)]
 #[states(scoped_entities)]
 enum ServerState {
     #[default]
     WaitingForLobby,
     WaitingForGame,
-    WaitingForPlayers,
     Playing,
 }
+
+/// The state of the current game, which consists of multiple courses.
+#[derive(SubStates, Reflect, Default, Debug, Clone, PartialEq, Eq, Hash)]
+#[states(scoped_entities)]
+#[source(ServerState = ServerState::Playing)]
+enum GameState {
+    /// Waiting for all the players to connect.
+    #[default]
+    Waiting,
+    Playing,
+    /// All the courses of the game are completed.
+    Completed,
+}
+
+/// The state of the current course, which consists of multiple holes.
+#[derive(SubStates, Reflect, Default, Debug, Clone, PartialEq, Eq, Hash)]
+#[states(scoped_entities)]
+#[source(GameState = GameState::Playing)]
+enum CourseState {
+    /// Waiting for all the players to load.
+    #[default]
+    Waiting,
+    Playing,
+    /// All the holes of the course are completed.
+    Completed,
+}
+
+/// The state of the current hole.
+#[derive(SubStates, Reflect, Default, Debug, Clone, PartialEq, Eq, Hash)]
+#[states(scoped_entities)]
+#[source(CourseState = CourseState::Playing)]
+enum HoleState {
+    #[default]
+    Playing,
+    /// All the players have completed the hole.
+    Completed,
+}
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+struct ConnectingToLobbySystems;
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+struct WaitingForGameSystems;
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+struct WaitingForPlayersSystems;
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+struct LoadingCourseSystems;
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+struct PlayingSystems;
 
 const WEB_TRANSPORT_PORT: u16 = 25565;
 
@@ -134,21 +240,6 @@ pub(crate) struct PlayerSession {
     player: Entity,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, States)]
-#[states(scoped_entities)]
-pub(crate) enum GlobalState {
-    #[default]
-    Idle,
-    Game,
-}
-
-fn set_game(mut state: ResMut<NextState<GlobalState>>) {
-    state.set(GlobalState::Game);
-}
-fn set_idle(mut state: ResMut<NextState<GlobalState>>) {
-    state.set(GlobalState::Idle);
-}
-
 #[derive(Resource, Reflect, Debug)]
 #[reflect(Resource)]
 pub(crate) struct Configuration {
@@ -161,6 +252,8 @@ pub(crate) struct Configuration {
     pub(crate) bumper_strength: f64,
 
     pub(crate) jump_pad_strength: f64,
+
+    pub(crate) courses: Vec<CourseDetails>,
 }
 
 impl Default for Configuration {
@@ -175,6 +268,8 @@ impl Default for Configuration {
             bumper_strength: 0.1,
 
             jump_pad_strength: 0.2,
+
+            courses: vec![],
         }
     }
 }
@@ -309,17 +404,11 @@ fn player_can_move(
     }
 }
 
-fn on_player_authenticated(
-    mut reader: EventReader<PlayerAuthenticated>,
-    current_hole: Option<Res<CurrentHole>>,
-    mut commands: Commands,
-) {
-    let initial_position = current_hole.map_or_else(|| Vec3::ZERO, |h| h.hole.start_position);
-
+fn on_player_authenticated(mut reader: EventReader<PlayerAuthenticated>, mut commands: Commands) {
     for authenticated in reader.read() {
         commands.entity(authenticated.player).insert((
             LastPlayerPosition {
-                position: initial_position,
+                position: Vec3::ZERO,
                 rotation: Quat::IDENTITY,
             },
             PlayerScore::default(),
@@ -329,7 +418,7 @@ fn on_player_authenticated(
             Collider::sphere(0.021336),
             CollisionLayers::new(GameLayer::Player, [GameLayer::Default]),
             Mass::from(0.04593),
-            Transform::from_translation(initial_position),
+            Transform::from_translation(Vec3::ZERO),
             Friction::new(0.2),
             Restitution::new(0.99),
             AngularDamping(1.0),

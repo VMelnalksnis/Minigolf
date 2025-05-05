@@ -6,7 +6,7 @@ use {
     minigolf::lobby::{PlayerId, user::ClientPacket},
 };
 
-// UI for managing the current lobby
+/// UI for managing the current lobby
 pub(crate) struct LobbyUiPlugin;
 
 impl Plugin for LobbyUiPlugin {
@@ -21,17 +21,28 @@ impl Plugin for LobbyUiPlugin {
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 struct LobbyUiSet;
 
-#[derive(Resource, Reflect, Debug, Default)]
+#[derive(Resource, Reflect, Debug)]
 pub(crate) struct LobbyUi {
     lobby_id: String,
     player_ids: Vec<PlayerId>,
+    course_count: usize,
+}
+
+impl Default for LobbyUi {
+    fn default() -> Self {
+        LobbyUi {
+            lobby_id: String::new(),
+            player_ids: Vec::new(),
+            course_count: 1,
+        }
+    }
 }
 
 impl LobbyUi {
     pub(crate) fn new_lobby(lobby_id: String) -> Self {
         LobbyUi {
             lobby_id,
-            player_ids: vec![],
+            ..default()
         }
     }
 
@@ -39,6 +50,7 @@ impl LobbyUi {
         LobbyUi {
             lobby_id,
             player_ids,
+            ..default() // todo
         }
     }
 

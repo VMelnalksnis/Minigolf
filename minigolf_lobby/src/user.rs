@@ -94,7 +94,6 @@ fn on_connected(
 }
 
 fn handle_messages(
-    mut start_game_writer: EventWriter<StartGame>,
     mut sessions: Query<(Entity, &mut Session), With<UserSession>>,
     known_players: Query<(&Player, &PlayerCredentials)>,
     members: Query<&LobbyMember>,
@@ -170,7 +169,7 @@ fn handle_messages(
 
                 ClientPacket::StartGame => {
                     let user_lobby = members.get(user_session).unwrap();
-                    start_game_writer.write(user_lobby.into());
+                    commands.trigger(StartGame::from(user_lobby));
                 }
 
                 ClientPacket::LeaveLobby => {

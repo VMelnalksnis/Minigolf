@@ -2,8 +2,10 @@ mod listeners;
 
 use {
     crate::{
-        Args, PlayerSession, ServerState, course::CurrentHole,
+        Args, Configuration, GameState, PlayerSession, ServerState, WaitingForPlayersSystems,
+        course::GameConfig,
         network::listeners::ServerListenerPlugin,
+        {ConnectingToLobbySystems, WaitingForGameSystems},
     },
     aeronet::{
         io::{
@@ -42,60 +44,37 @@ impl Plugin for ServerNetworkPlugin {
             ..default()
         }));
 
-        app.add_observer(on_opened)
-            .add_observer(on_session_request)
-            .add_observer(on_connected)
-            .add_observer(on_disconnected)
-            .add_event::<PlayerAuthenticated>();
+        app.register_type::<UnauthenticatedSession>();
+        app.add_event::<PlayerAuthenticated>();
 
-        app.init_state::<ServerState>();
+        app.add_observer(on_opened);
+        app.add_observer(on_session_request);
+        app.add_observer(on_connected);
+        app.add_observer(on_disconnected);
 
-        app.init_resource::<LobbyServerConnector>()
-            .configure_sets(
-                Startup,
-                LobbySet.run_if(in_state(ServerState::WaitingForLobby)),
-            )
-            .configure_sets(
-                Update,
-                LobbySet.run_if(in_state(ServerState::WaitingForLobby)),
-            )
-            .add_systems(Startup, lobby_setup.in_set(LobbySet))
-            .add_systems(
-                Update,
-                (lobby_connection_messages, reconnect_to_lobby).in_set(LobbySet),
-            );
+        app.init_resource::<LobbyServerConnector>();
+        app.add_systems(OnEnter(ServerState::WaitingForLobby), lobby_setup);
+        app.add_systems(
+            Update,
+            (lobby_connection_messages, reconnect_to_lobby).in_set(ConnectingToLobbySystems),
+        );
 
         app.add_systems(OnEnter(ServerState::WaitingForGame), inform_lobby_server);
-
-        app.configure_sets(
-            Update,
-            GameSet.run_if(in_state(ServerState::WaitingForGame)),
-        )
-        .add_systems(Update, game_setup_messages.in_set(GameSet));
-
-        app.configure_sets(
-            FixedUpdate,
-            PlayersJoiningSet.run_if(in_state(ServerState::WaitingForPlayers)),
-        )
-        .add_systems(
-            OnEnter(ServerState::WaitingForPlayers),
-            setup_waiting_for_players,
-        )
-        .add_systems(
-            FixedUpdate,
-            (player_authentication_handler, all_players_joined).in_set(PlayersJoiningSet),
-        )
-        .register_type::<UnauthenticatedSession>();
+        app.add_systems(Update, game_setup_messages.in_set(WaitingForGameSystems));
 
         app.add_systems(OnEnter(ServerState::Playing), setup_observers);
+
+        app.add_systems(OnEnter(GameState::Waiting), setup_waiting_for_players);
+        app.add_systems(
+            FixedUpdate,
+            (player_authentication_handler, all_players_joined).in_set(WaitingForPlayersSystems),
+        );
+
         app.add_systems(OnExit(ServerState::Playing), disconnect_players);
     }
 }
 
 // Client setup for lobby server
-
-#[derive(SystemSet, Clone, Eq, PartialEq, Hash, Debug)]
-struct LobbySet;
 
 #[derive(Resource, Reflect, Debug)]
 struct LobbyServerConnector {
@@ -209,13 +188,11 @@ fn inform_lobby_server(mut sessions: Query<&mut Session, With<WebSocketClient>>,
 
 // game setup
 
-#[derive(SystemSet, Clone, Eq, PartialEq, Hash, Debug)]
-struct GameSet;
-
 fn game_setup_messages(
     mut sessions: Query<&mut Session, With<WebSocketClient>>,
     mut server_state: ResMut<NextState<ServerState>>,
     mut commands: Commands,
+    config: Res<Configuration>,
 ) {
     let Ok(mut session) = sessions.single_mut() else {
         return;
@@ -228,17 +205,32 @@ fn game_setup_messages(
         info!("{server_packet:?}");
 
         match server_packet {
-            ServerPacket::CreateGame(lobby_id, players) => {
-                for (player_id, player_credentials) in players.into_iter() {
+            ServerPacket::CreateGame(request) => {
+                for (player_id, player_credentials) in request.players.into_iter() {
                     commands.spawn((
                         Name::new("Player"),
-                        LobbyMember::from(lobby_id),
+                        LobbyMember::from(request.lobby_id),
                         Player::from(player_id),
                         player_credentials,
                     ));
                 }
 
-                server_state.set(ServerState::WaitingForPlayers);
+                let courses = request
+                    .courses
+                    .iter()
+                    .map(|id| {
+                        config
+                            .courses
+                            .iter()
+                            .find(|c| c.id == *id)
+                            .unwrap()
+                            .to_owned()
+                    })
+                    .collect::<Vec<_>>();
+
+                info!("Starting game with courses {:?}", courses);
+                commands.insert_resource(GameConfig::new(courses));
+                server_state.set(ServerState::Playing);
             }
 
             _ => unimplemented!(),
@@ -247,9 +239,6 @@ fn game_setup_messages(
 }
 
 // waiting for players
-
-#[derive(SystemSet, Clone, Eq, PartialEq, Hash, Debug)]
-struct PlayersJoiningSet;
 
 #[derive(Component, Reflect, Debug)]
 struct UnauthenticatedSession;
@@ -264,7 +253,7 @@ fn setup_waiting_for_players(
     commands.spawn((
         Name::new("Player session observer"),
         Observer::new(on_connected_while_waiting),
-        StateScoped(ServerState::WaitingForPlayers),
+        StateScoped(GameState::Waiting),
     ));
 
     let lobby_id = lobby_members.iter().next().unwrap().lobby_id;
@@ -346,19 +335,14 @@ fn player_authentication_handler(
 fn all_players_joined(
     players: Query<(), With<Player>>,
     authenticated_players: Query<(), (With<Player>, With<Replicated>)>,
-    current_hole: Option<Res<CurrentHole>>,
-    mut state: ResMut<NextState<ServerState>>,
+    mut state: ResMut<NextState<GameState>>,
 ) {
     let total_player_count = players.iter().count();
     let connected_player_count = authenticated_players.iter().count();
 
-    if let None = current_hole {
-        return;
-    }
-
     if total_player_count == connected_player_count {
         info!("All {:?} players joined", total_player_count);
-        state.set(ServerState::Playing)
+        state.set(GameState::Playing)
     }
 }
 

@@ -31,6 +31,8 @@ impl Plugin for MinigolfPlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<GameState>();
 
+        app.register_type::<CourseDetails>();
+
         app.replicate::<Name>();
         app.replicate::<Transform>();
         app.replicate::<GlobalTransform>();
@@ -47,6 +49,14 @@ impl Plugin for MinigolfPlugin {
         app.add_client_event::<AuthenticatePlayer>(Channel::Ordered);
         app.add_client_event::<PlayerInput>(Channel::Ordered);
     }
+}
+
+pub type CourseId = String;
+
+#[derive(Reflect, Serialize, Deserialize, Clone, Debug)]
+pub struct CourseDetails {
+    pub id: CourseId,
+    pub name: String,
 }
 
 /// Marker component for a player in the game.

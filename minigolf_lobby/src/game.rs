@@ -6,7 +6,7 @@ use {
     minigolf::{
         lobby::{
             LobbyId,
-            game::{ClientPacket, ServerPacket},
+            game::{ClientPacket, CreateGameRequest, ServerPacket},
             user::LobbyMember,
         },
         {Player, PlayerCredentials},
@@ -18,17 +18,18 @@ pub(super) struct GameServerPlugin;
 
 impl Plugin for GameServerPlugin {
     fn build(&self, app: &mut App) {
+        app.register_type::<StartGame>();
+
         app.add_systems(Startup, open_listener);
 
         app.add_observer(on_opened);
         app.add_observer(on_connected);
         app.add_observer(on_game_server_added);
         app.add_observer(on_game_server_removed);
+        app.add_observer(on_start_game);
 
         app.add_systems(Update, handle_messages);
-        app.add_systems(PostUpdate, start_game);
 
-        app.add_event::<StartGame>();
         app.add_event::<GameStarted>();
     }
 }
@@ -158,7 +159,7 @@ fn on_game_server_removed(
     info!("Removed game server, remaining {remaining:?}");
 }
 
-#[derive(Event, Debug)]
+#[derive(Event, Reflect, Debug)]
 pub(crate) struct StartGame {
     pub(crate) lobby_id: LobbyId,
 }
@@ -171,26 +172,32 @@ impl From<&LobbyMember> for StartGame {
     }
 }
 
-fn start_game(
-    mut start_game_reader: EventReader<StartGame>,
+fn on_start_game(
+    trigger: Trigger<StartGame>,
     mut servers: Query<&mut Session, With<GameServer>>,
     lobby_players: Query<(&LobbyMember, &Player, &PlayerCredentials)>,
 ) {
-    for start_game in start_game_reader.read() {
-        for mut server in &mut servers {
-            let players = lobby_players
-                .iter()
-                .filter(|(member, _, _)| member.lobby_id == start_game.lobby_id)
-                .map(|(_, player, credentials)| (player.id, credentials.clone()))
-                .collect();
+    let lobby_id = trigger.lobby_id;
 
-            let message: String = ServerPacket::CreateGame(start_game.lobby_id, players).into();
+    for mut server in &mut servers {
+        let players = lobby_players
+            .iter()
+            .filter(|(member, _, _)| member.lobby_id == lobby_id)
+            .map(|(_, player, credentials)| (player.id, credentials.clone()))
+            .collect();
 
-            info!("Sending message {:?}", message);
-            server.send.push(Bytes::from_owner(message));
+        let request = CreateGameRequest {
+            lobby_id,
+            players,
+            courses: vec!["0002".to_owned(), "0002".to_owned()],
+        };
 
-            break;
-        }
+        let message: String = ServerPacket::CreateGame(request).into();
+
+        info!("Sending message {:?}", message);
+        server.send.push(Bytes::from_owner(message));
+
+        break;
     }
 }
 

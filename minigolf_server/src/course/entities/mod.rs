@@ -1,5 +1,5 @@
 use {
-    crate::{Configuration, GameLayer, ServerState, course::PlayingSet},
+    crate::{Configuration, GameLayer, PlayingSystems, ServerState},
     avian3d::{math::Scalar, prelude::*},
     bevy::{app::App, ecs::entity::EntityHashSet, math::DVec3, prelude::*},
     minigolf::Player,
@@ -13,12 +13,12 @@ impl Plugin for CourseEntitiesPlugin {
         app.register_type::<JumpPad>();
         app.register_type::<BallMagnet>();
 
-        app.add_systems(OnEnter(ServerState::WaitingForPlayers), setup);
+        app.add_systems(OnEnter(ServerState::Playing), setup);
 
         app.add_systems(Update, add_required_ball_magnet_components); // todo
         app.add_systems(
             Update,
-            (despawn_bumpers, apply_ball_magnet).in_set(PlayingSet),
+            (despawn_bumpers, apply_ball_magnet).in_set(PlayingSystems),
         );
     }
 }

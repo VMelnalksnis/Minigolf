@@ -1,5 +1,8 @@
 use {
-    crate::{Configuration, config::ServerPlugin, course::setup::CourseConfiguration},
+    crate::{
+        Configuration, CourseState, GameState, HoleState, ServerState, config::ServerPlugin,
+        course::setup::CourseConfiguration,
+    },
     bevy::{
         asset::{ReflectAsset, UntypedAssetId},
         ecs::system::RunSystemOnce,
@@ -30,8 +33,8 @@ impl Plugin for ServerPlugin {
 
         app.add_plugins(EguiPlugin {
             enable_multipass_for_primary_context: false,
-        })
-        .add_plugins(DefaultInspectorConfigPlugin);
+        });
+        app.add_plugins(DefaultInspectorConfigPlugin);
 
         app.register_type::<Option<Handle<Image>>>();
         app.register_type::<AlphaMode>();
@@ -128,7 +131,9 @@ impl UiState {
         let [_inspector, _scene] =
             tree.split_below(inspector, 0.8, vec![EditorWindow::SceneLoader]);
 
-        let [game, _hierarchy] = tree.split_left(game, 0.2, vec![EditorWindow::Hierarchy]);
+        let [game, hierarchy] = tree.split_left(game, 0.2, vec![EditorWindow::Hierarchy]);
+
+        let [_hierarchy, _states] = tree.split_below(hierarchy, 0.8, vec![EditorWindow::States]);
 
         let [_game, _bottom] = tree.split_below(
             game,
@@ -167,6 +172,7 @@ enum EditorWindow {
     Assets,
     Inspector,
     SceneLoader,
+    States,
 }
 
 struct TabViewer<'a> {
@@ -236,6 +242,8 @@ impl egui_dock::TabViewer for TabViewer<'_> {
             },
 
             EditorWindow::SceneLoader => scene_loader(ui, self.world),
+
+            EditorWindow::States => states(ui, self.world),
         }
     }
 
@@ -368,6 +376,32 @@ fn select_asset(
             }
         });
     }
+}
+
+fn states(ui: &mut egui::Ui, world: &mut World) {
+    ui.horizontal(|ui| {
+        ui.label("Server:");
+        ui.push_id(1, |ui| {
+            bevy_inspector::ui_for_state::<ServerState>(world, ui)
+        });
+    });
+
+    ui.horizontal(|ui| {
+        ui.label("Game:");
+        ui.push_id(2, |ui| bevy_inspector::ui_for_state::<GameState>(world, ui));
+    });
+
+    ui.horizontal(|ui| {
+        ui.label("Course:");
+        ui.push_id(3, |ui| {
+            bevy_inspector::ui_for_state::<CourseState>(world, ui)
+        });
+    });
+
+    ui.horizontal(|ui| {
+        ui.label("Hole:");
+        ui.push_id(4, |ui| bevy_inspector::ui_for_state::<HoleState>(world, ui));
+    });
 }
 
 #[derive(Resource, Reflect, Debug)]

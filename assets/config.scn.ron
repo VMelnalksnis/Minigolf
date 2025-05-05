@@ -7,6 +7,12 @@
       hole_magnet_strength: 50.0,
       bumper_strength: 0.1,
       jump_pad_strength: 0.2,
+      courses: [
+        (
+          id: "0002",
+          name: "Test 1",
+        ),
+      ],
     ),
   },
   entities: {},
