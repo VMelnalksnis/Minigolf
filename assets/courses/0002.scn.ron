@@ -43,7 +43,7 @@
           bounding_box: (
             translation: (1.0, 0.2, -0.2),
             rotation: (0.0, 0.0, 0.0, 1.0),
-            scale: (2.0, 4.0, 0.8),
+            scale: (2.8, 4.0, 1.2),
           ),
           hole_sensor: (
             translation: (2.0, -0.05, 0.0),
@@ -72,7 +72,7 @@
           bounding_box: (
             translation: (-0.5999999, 0.2, 0.19999987),
             rotation: (0.0, 0.0, 0.0, 1.0),
-            scale: (2.0, 4.0, 0.8),
+            scale: (2.0, 4.0, 1.2),
           ),
           hole_sensor: (
             translation: (-1.1999998, -0.05, 0.00000011920929),
