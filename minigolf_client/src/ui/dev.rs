@@ -10,6 +10,11 @@ pub(crate) struct DebugUiPlugin;
 impl Plugin for DebugUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, network_stats_ui);
+
+        #[cfg(feature = "dev")]
+        {
+            app.add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::default());
+        }
     }
 }
 

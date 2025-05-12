@@ -19,5 +19,11 @@ bevy_replicon = { workspace = true, features = ["client"] }
 aeronet_replicon = { workspace = true, features = ["client"] }
 web-sys = { workspace = true, features = ["Window", "Document", "Element", "HtmlCanvasElement", "CssStyleDeclaration"] }
 
+bevy-inspector-egui = { workspace = true, optional = true }
+
 [features]
-dev = ["bevy/bevy_dev_tools", "bevy/dynamic_linking"]
+dev = [
+    "bevy-inspector-egui",
+    "bevy/bevy_dev_tools",
+    "bevy/dynamic_linking"
+]
