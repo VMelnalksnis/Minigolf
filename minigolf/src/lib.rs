@@ -1,11 +1,15 @@
 pub mod lobby;
+mod replication;
 
 use {
-    crate::lobby::PlayerId,
-    bevy::{prelude::*, reflect::GetTypeRegistration},
-    bevy_replicon::{prelude::*, shared::replication::replication_registry::command_fns::MutWrite},
+    crate::{
+        lobby::PlayerId,
+        replication::{get_child_of_serialization_rules, register_replicated},
+    },
+    bevy::prelude::*,
+    bevy_replicon::prelude::*,
     rand::{distr::StandardUniform, prelude::*},
-    serde::{Deserialize, Serialize, de::DeserializeOwned},
+    serde::{Deserialize, Serialize},
     uuid::Uuid,
 };
 
@@ -35,7 +39,7 @@ impl Plugin for MinigolfPlugin {
 
         app.replicate::<Name>();
         app.replicate::<Transform>();
-        app.replicate::<GlobalTransform>();
+        app.replicate_with(get_child_of_serialization_rules());
 
         register_replicated::<Player>(app);
         register_replicated::<PlayerScore>(app);
@@ -289,13 +293,4 @@ impl Distribution<PowerUpType> for StandardUniform {
         let index = rng.random_range(0..IMPLEMENTED_POWER_UPS.len());
         IMPLEMENTED_POWER_UPS[index]
     }
-}
-
-fn register_replicated<TComponent: Component + GetTypeRegistration + Serialize + DeserializeOwned>(
-    app: &mut App,
-) where
-    <TComponent as bevy::prelude::Component>::Mutability: MutWrite<TComponent>,
-{
-    app.register_type::<TComponent>();
-    app.replicate::<TComponent>();
 }

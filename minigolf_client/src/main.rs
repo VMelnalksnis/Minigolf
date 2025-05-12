@@ -30,6 +30,7 @@ fn main() -> AppExit {
             MinigolfPlugin,
             MinigolfInputPlugin,
         ))
+        .register_required_components::<Children, InheritedVisibility>()
         .add_systems(Startup, (set_window_title, setup_level))
         .add_observer(on_connected)
         .add_observer(on_player_added)
