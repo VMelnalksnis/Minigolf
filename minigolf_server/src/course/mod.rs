@@ -10,8 +10,8 @@ use {
             entities::CourseEntitiesPlugin, power_ups::PowerUpPlugin, setup::CourseSetupPlugin,
         },
     },
-    avian3d::prelude::*,
-    bevy::{app::App, math::DVec3, prelude::*},
+    avian3d::{math::Vector, prelude::*},
+    bevy::{app::App, prelude::*},
     minigolf::{CourseDetails, Player, PlayerInput, PlayerScore, PowerUp},
 };
 
@@ -356,8 +356,8 @@ fn handle_hole_bounding_box(
                 let (mut transform, mut linear, mut angular, last) =
                     transforms.get_mut(player_entity).unwrap();
 
-                linear.0 = DVec3::ZERO;
-                angular.0 = DVec3::ZERO;
+                linear.0 = Vector::ZERO;
+                angular.0 = Vector::ZERO;
 
                 info!("Last position: {last:?}");
                 // todo: ball rolls off the edge when last position set close to it, even though it was stable before respawning

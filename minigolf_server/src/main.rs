@@ -5,8 +5,8 @@ use {
         network::{PlayerAuthenticated, ServerNetworkPlugin},
     },
     aeronet::io::connection::Disconnected,
-    avian3d::prelude::*,
-    bevy::{math::DVec3, prelude::*},
+    avian3d::{math::Scalar, prelude::*},
+    bevy::prelude::*,
     bevy_replicon::prelude::*,
     minigolf::{CourseDetails, MinigolfPlugin, Player, PlayerInput, PlayerPowerUps, PlayerScore},
     std::{
@@ -243,7 +243,7 @@ pub(crate) struct PlayerSession {
 #[derive(Resource, Reflect, Debug)]
 #[reflect(Resource)]
 pub(crate) struct Configuration {
-    pub(crate) wind_strength: f32,
+    pub(crate) wind_strength: Scalar,
 
     pub(crate) hole_magnet_min_distance: f32,
     pub(crate) hole_magnet_max_distance: f32,
@@ -364,7 +364,7 @@ fn move_player(
 
         commands
             .entity(player)
-            .insert(ExternalImpulse::new(DVec3::from(force_vec)))
+            .insert(ExternalImpulse::new(force_vec.into()))
             .remove::<ChipShotMarker>();
     }
 }

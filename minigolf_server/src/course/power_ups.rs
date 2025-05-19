@@ -2,13 +2,14 @@ use {
     crate::{
         HoleState, LastPlayerPosition, PlayingSystems, ServerState, ValidPlayerInput,
         course::{
-            Configuration, CurrentHole, HoleWalls,
+            Configuration, CurrentHole, HoleSensor, HoleWalls,
             setup::{SpawnBlackHoleBumper, SpawnBumper},
         },
     },
     avian3d::{math::Vector, prelude::*},
-    bevy::{math::DVec3, prelude::*},
+    bevy::prelude::*,
     minigolf::{Player, PlayerInput, PlayerPowerUps, PowerUp},
+    std::ops::Deref,
 };
 
 pub(crate) struct PowerUpPlugin;
@@ -28,13 +29,17 @@ impl Plugin for PowerUpPlugin {
             FixedUpdate,
             (
                 handle_power_up_sensors,
+                apply_winds,
                 apply_hole_magnet,
                 remove_hole_magnet,
             )
                 .in_set(PlayingSystems),
         );
 
-        app.add_systems(OnEnter(HoleState::Completed), remove_sticky_ball);
+        app.add_systems(
+            OnEnter(HoleState::Completed),
+            (remove_sticky_ball, despawn_winds),
+        );
     }
 }
 
@@ -56,7 +61,6 @@ fn apply_power_ups(
     mut commands: Commands,
     players: Query<Entity, With<Player>>,
     hole_walls: Query<(Entity, &HoleWalls)>,
-    config: Res<Configuration>,
 ) {
     for &ValidPlayerInput { input, player } in reader.read() {
         match input {
@@ -99,13 +103,7 @@ fn apply_power_ups(
 
             PlayerInput::Wind(direction) => {
                 let direction = direction.normalize();
-                let force = Vec3::new(direction.x, 0.0, direction.y) * config.wind_strength;
-
-                players.iter().for_each(|player| {
-                    commands
-                        .entity(player)
-                        .insert(ExternalForce::new(DVec3::from(force)));
-                });
+                commands.spawn((Name::new("Wind"), Wind { direction }));
             }
 
             PlayerInput::StickyWalls => {
@@ -169,6 +167,44 @@ fn handle_power_up_sensors(
     }
 }
 
+#[derive(Component, Reflect, Debug)]
+struct Wind {
+    direction: Vec2,
+}
+
+fn apply_winds(
+    winds: Query<&Wind>,
+    players: Query<(Entity, Option<&ExternalForce>), With<Player>>,
+    holes: Query<&CollidingEntities, With<HoleSensor>>,
+    config: Res<Configuration>,
+    mut commands: Commands,
+) {
+    if winds.is_empty() {
+        return;
+    }
+
+    let direction: Vec2 = winds.iter().map(|wind| wind.direction.normalize()).sum();
+    let wind_force =
+        Vector::new(direction.x.into(), 0.0, direction.y.into()) * config.wind_strength;
+
+    for (player, existing_force) in players {
+        if holes.iter().any(|colliding| colliding.contains(&player)) {
+            // todo: delay to disable wind while inside hole?
+            continue;
+        }
+
+        let force = wind_force + existing_force.map_or(Vector::ZERO, |f| f.deref().to_owned());
+
+        commands
+            .entity(player)
+            .insert(ExternalForce::new(force).with_persistence(false));
+    }
+}
+
+fn despawn_winds(winds: Query<Entity, With<Wind>>, mut commands: Commands) {
+    winds.iter().for_each(|e| commands.entity(e).despawn());
+}
+
 #[derive(Component, Reflect)]
 struct HoleMagnetPowerUp;
 
@@ -197,7 +233,7 @@ fn apply_hole_magnet(
         let force = vector.normalize() * time.delta_secs() * config.hole_magnet_strength;
         commands
             .entity(player)
-            .insert(ExternalForce::new(DVec3::from(force)).with_persistence(false));
+            .insert(ExternalForce::new(force.into()).with_persistence(false));
     }
 }
 
@@ -257,8 +293,8 @@ fn on_player_collided(
 
     commands.entity(player_entity).insert(Sleeping);
     let (mut linear, mut angular) = velocities.get_mut(player_entity).unwrap();
-    linear.0 = DVec3::ZERO;
-    angular.0 = DVec3::ZERO;
+    linear.0 = Vector::ZERO;
+    angular.0 = Vector::ZERO;
 }
 
 fn remove_sticky_ball(players: Query<Entity, With<Player>>, mut commands: Commands) {

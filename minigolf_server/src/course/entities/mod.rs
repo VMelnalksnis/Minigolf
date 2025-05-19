@@ -1,7 +1,10 @@
 use {
     crate::{Configuration, GameLayer, PlayingSystems, ServerState},
-    avian3d::{math::Scalar, prelude::*},
-    bevy::{app::App, ecs::entity::EntityHashSet, math::DVec3, prelude::*},
+    avian3d::{
+        math::{Scalar, Vector},
+        prelude::*,
+    },
+    bevy::{app::App, ecs::entity::EntityHashSet, prelude::*},
     minigolf::Player,
 };
 
@@ -126,7 +129,7 @@ fn apply_jump_pad_impulse(
     };
 
     // todo: can get stuck on jump pads when entering without enough horizontal velocity
-    let direction = DVec3::Y;
+    let direction = Vector::Y;
 
     info!(
         "Applying jump pad effect to player {:?} in direction {:?}",
