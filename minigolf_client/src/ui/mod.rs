@@ -1,3 +1,4 @@
+#[cfg(feature = "dev")]
 mod dev;
 pub(crate) mod lobby;
 mod lobby_select;
@@ -6,8 +7,8 @@ mod power_ups;
 
 use {
     crate::ui::{
-        dev::DebugUiPlugin, lobby::LobbyUiPlugin, lobby_select::LobbySelectUiPlugin,
-        lobby_server::LobbyServerUiPlugin, power_ups::PowerUpUiPlugin,
+        lobby::LobbyUiPlugin, lobby_select::LobbySelectUiPlugin, lobby_server::LobbyServerUiPlugin,
+        power_ups::PowerUpUiPlugin,
     },
     bevy::prelude::*,
     bevy_egui::EguiPlugin,
@@ -21,7 +22,12 @@ impl Plugin for ClientUiPlugin {
         app.add_plugins(EguiPlugin {
             enable_multipass_for_primary_context: false,
         });
-        app.add_plugins(DebugUiPlugin);
+
+        #[cfg(feature = "dev")]
+        {
+            app.add_plugins(dev::DebugUiPlugin);
+        }
+
         app.add_plugins((
             LobbyServerUiPlugin,
             LobbySelectUiPlugin,
