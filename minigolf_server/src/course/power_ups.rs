@@ -9,7 +9,6 @@ use {
     avian3d::{math::Vector, prelude::*},
     bevy::prelude::*,
     minigolf::{Player, PlayerInput, PlayerPowerUps, PowerUp},
-    std::ops::Deref,
 };
 
 pub(crate) struct PowerUpPlugin;
@@ -46,7 +45,7 @@ impl Plugin for PowerUpPlugin {
 fn setup_observers(mut commands: Commands) {
     commands.spawn((
         Name::new("Apply sticky effects observer"),
-        StateScoped(ServerState::Playing),
+        DespawnOnExit(ServerState::Playing),
         Observer::new(on_player_collided),
     ));
 }
@@ -56,7 +55,7 @@ fn setup_observers(mut commands: Commands) {
 pub(crate) struct ChipShotMarker;
 
 fn apply_power_ups(
-    mut reader: EventReader<ValidPlayerInput>,
+    mut reader: MessageReader<ValidPlayerInput>,
     current_hole: Res<CurrentHole>,
     mut commands: Commands,
     players: Query<Entity, With<Player>>,
@@ -174,10 +173,10 @@ struct Wind {
 
 fn apply_winds(
     winds: Query<&Wind>,
-    players: Query<(Entity, Option<&ExternalForce>), With<Player>>,
+    players: Query<Entity, With<Player>>,
     holes: Query<&CollidingEntities, With<HoleSensor>>,
     config: Res<Configuration>,
-    mut commands: Commands,
+    mut forces: Query<Forces>,
 ) {
     if winds.is_empty() {
         return;
@@ -187,17 +186,16 @@ fn apply_winds(
     let wind_force =
         Vector::new(direction.x.into(), 0.0, direction.y.into()) * config.wind_strength;
 
-    for (player, existing_force) in players {
+    for player in players {
         if holes.iter().any(|colliding| colliding.contains(&player)) {
             // todo: delay to disable wind while inside hole?
             continue;
         }
 
-        let force = wind_force + existing_force.map_or(Vector::ZERO, |f| f.deref().to_owned());
-
-        commands
-            .entity(player)
-            .insert(ExternalForce::new(force).with_persistence(false));
+        forces
+            .get_mut(player)
+            .unwrap()
+            .apply_force(wind_force);
     }
 }
 
@@ -210,11 +208,11 @@ struct HoleMagnetPowerUp;
 
 fn apply_hole_magnet(
     current_hole: Res<CurrentHole>,
-    mut commands: Commands,
     transforms: Query<&GlobalTransform>,
     players: Query<(Entity, &GlobalTransform), (With<Player>, With<HoleMagnetPowerUp>)>,
     time: Res<Time<Fixed>>,
     config: Res<Configuration>,
+    mut forces: Query<Forces>
 ) {
     let Ok(hole_transform) = transforms.get(current_hole.hole_entity) else {
         return;
@@ -231,9 +229,7 @@ fn apply_hole_magnet(
         }
 
         let force = vector.normalize() * time.delta_secs() * config.hole_magnet_strength;
-        commands
-            .entity(player)
-            .insert(ExternalForce::new(force.into()).with_persistence(false));
+        forces.get_mut(player).unwrap().apply_force(force.into());
     }
 }
 
@@ -260,7 +256,7 @@ struct StickyWalls;
 pub(crate) struct StickyBall;
 
 fn on_player_collided(
-    trigger: Trigger<OnCollisionStart>,
+    trigger: On<CollisionStart>,
     walls: Query<(), With<HoleWalls>>,
     sticky_walls: Query<(), (With<HoleWalls>, With<StickyWalls>)>,
     players: Query<&Player>,
@@ -268,8 +264,8 @@ fn on_player_collided(
     mut velocities: Query<(&mut LinearVelocity, &mut AngularVelocity)>,
     mut commands: Commands,
 ) {
-    let player_entity = trigger.target();
-    let Ok(player) = players.get(trigger.target()) else {
+    let player_entity = trigger.collider1;
+    let Ok(player) = players.get(player_entity) else {
         return;
     };
 
@@ -277,7 +273,7 @@ fn on_player_collided(
         return;
     }
 
-    let other_entity = trigger.collider;
+    let other_entity = trigger.collider2;
     let Ok(_) = walls.get(other_entity) else {
         return;
     };

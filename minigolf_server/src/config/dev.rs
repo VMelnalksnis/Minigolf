@@ -5,15 +5,14 @@ use {
     },
     bevy::{
         asset::{ReflectAsset, UntypedAssetId},
+        camera::Viewport,
         ecs::system::RunSystemOnce,
-        math::{DQuat, DVec3},
         prelude::*,
         reflect::TypeRegistry,
-        render::camera::{CameraProjection, Viewport},
         tasks::IoTaskPool,
         window::PrimaryWindow,
     },
-    bevy_egui::{EguiContext, EguiContextPass, EguiContextSettings, EguiPlugin},
+    bevy_egui::{EguiContext, EguiContextSettings, EguiPlugin, EguiPrimaryContextPass},
     bevy_inspector_egui::{
         DefaultInspectorConfigPlugin,
         bevy_inspector::hierarchy::hierarchy_ui,
@@ -24,16 +23,13 @@ use {
     },
     egui_dock::{DockArea, DockState, NodeIndex, Style},
     std::{any::TypeId, fs::File, io::Write},
-    transform_gizmo_egui::{Gizmo, GizmoConfig, GizmoExt, GizmoOrientation, mint},
 };
 
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(DefaultPlugins);
 
-        app.add_plugins(EguiPlugin {
-            enable_multipass_for_primary_context: false,
-        });
+        app.add_plugins(EguiPlugin::default());
         app.add_plugins(DefaultInspectorConfigPlugin);
 
         app.register_type::<Option<Handle<Image>>>();
@@ -43,7 +39,7 @@ impl Plugin for ServerPlugin {
         app.init_resource::<SceneLoaderState>();
 
         app.add_systems(Startup, setup);
-        app.add_systems(EguiContextPass, show_ui_system);
+        app.add_systems(EguiPrimaryContextPass, show_ui_system);
         app.add_systems(PostUpdate, set_camera_viewport.after(show_ui_system));
     }
 }
@@ -197,8 +193,6 @@ impl egui_dock::TabViewer for TabViewer<'_> {
         match window {
             EditorWindow::GameView => {
                 *self.viewport_rect = ui.clip_rect();
-
-                draw_gizmo(ui, &mut self.gizmo, self.world, self.selected_entities);
             }
 
             EditorWindow::Hierarchy => {
@@ -249,62 +243,6 @@ impl egui_dock::TabViewer for TabViewer<'_> {
 
     fn clear_background(&self, window: &Self::Tab) -> bool {
         !matches!(window, EditorWindow::GameView)
-    }
-}
-
-fn draw_gizmo(
-    ui: &mut egui::Ui,
-    gizmo: &mut Gizmo,
-    world: &mut World,
-    selected_entities: &SelectedEntities,
-) {
-    let (cam_transform, projection) = world
-        .query_filtered::<(&GlobalTransform, &Projection), With<Camera3d>>()
-        .single(world)
-        .expect("Camera not found");
-    let view_matrix = Mat4::from(cam_transform.affine().inverse());
-    let projection_matrix = projection.get_clip_from_view();
-
-    if selected_entities.len() != 1 {
-        return;
-    }
-
-    for selected in selected_entities.iter() {
-        let Some(transform) = world.get::<Transform>(selected) else {
-            continue;
-        };
-
-        gizmo.update_config(GizmoConfig {
-            view_matrix: view_matrix.to_cols_array().map(|x| x as f64).into(),
-            projection_matrix: projection_matrix.to_cols_array().map(|x| x as f64).into(),
-            orientation: GizmoOrientation::Local,
-            ..Default::default()
-        });
-        let transform = transform_gizmo_egui::math::Transform::from_scale_rotation_translation(
-            mint::Vector3::from([
-                transform.scale.x as f64,
-                transform.scale.y as f64,
-                transform.scale.z as f64,
-            ]),
-            mint::Quaternion::from(transform.rotation.to_array().map(|x| x as f64)),
-            mint::Vector3::from([
-                transform.translation.x as f64,
-                transform.translation.y as f64,
-                transform.translation.z as f64,
-            ]),
-        );
-        let Some((_, transforms)) = gizmo.interact(ui, &[transform]) else {
-            continue;
-        };
-        let new = transforms[0];
-
-        let mut transform = world.get_mut::<Transform>(selected).unwrap();
-        *transform = Transform {
-            translation: DVec3::from([new.translation.x, new.translation.y, new.translation.z])
-                .as_vec3(),
-            rotation: DQuat::from_array(<[f64; 4]>::from(new.rotation)).as_quat(),
-            scale: DVec3::from([new.scale.x, new.scale.y, new.scale.z]).as_vec3(),
-        };
     }
 }
 

@@ -1,3 +1,4 @@
+use bevy::ecs::query::QuerySingleError;
 use {
     crate::{LocalPlayer, input::camera::CameraInputPlugin},
     bevy::{
@@ -76,27 +77,27 @@ fn setup(mut commands: Commands) {
     commands.spawn_batch([
         (
             Name::new("Teleport observer"),
-            StateScoped(GameState::Playing),
+            DespawnOnExit(GameState::Playing),
             Observer::new(teleport),
         ),
         (
             Name::new("Bumper placement observer"),
-            StateScoped(GameState::Playing),
+            DespawnOnExit(GameState::Playing),
             Observer::new(place_bumper),
         ),
         (
             Name::new("Black hole bumper placement observer"),
-            StateScoped(GameState::Playing),
+            DespawnOnExit(GameState::Playing),
             Observer::new(place_black_hole_bumper),
         ),
         (
             Name::new("Pointer down observer"),
-            StateScoped(GameState::Playing),
+            DespawnOnExit(GameState::Playing),
             Observer::new(on_pointer_down),
         ),
         (
             Name::new("Pointer up placement observer"),
-            StateScoped(GameState::Playing),
+            DespawnOnExit(GameState::Playing),
             Observer::new(on_pointer_up),
         ),
     ]);
@@ -124,7 +125,7 @@ pub(crate) enum InputTarget {
 }
 
 fn on_pointer_down(
-    trigger: Trigger<Pointer<Pressed>>,
+    trigger: On<Pointer<Press>>,
     players: Query<Entity, With<LocalPlayer>>,
     input_state: Res<State<InputState>>,
     mut input_target: ResMut<NextState<InputTarget>>,
@@ -135,7 +136,7 @@ fn on_pointer_down(
         return;
     }
 
-    match players.get(trigger.target()) {
+    match players.get(trigger.entity) {
         Ok(_) => match input_state.get() {
             InputState::CanMove => input_target.set(InputTarget::Movement),
             InputState::CannotMove => input_target.set(InputTarget::Camera),
@@ -145,9 +146,9 @@ fn on_pointer_down(
 }
 
 fn on_pointer_up(
-    _trigger: Trigger<Pointer<Released>>,
+    _trigger: On<Pointer<Release>>,
     input_state: Res<State<InputState>>,
-    mut writer: EventWriter<PlayerInput>,
+    mut writer: MessageWriter<PlayerInput>,
     mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>,
     mut input_target: ResMut<NextState<InputTarget>>,
 ) {
@@ -156,9 +157,23 @@ fn on_pointer_up(
         return;
     }
 
-    let Ok(mut input) = inputs.single_mut() else {
-        error!("Multiple entities with accumulated inputs/local player marker ");
-        input_target.set(InputTarget::None);
+    let input_option = match inputs.single_mut() {
+        Ok(input) => {Some(input)}
+        Err(error) => match error {
+            QuerySingleError::NoEntities(_) => {
+                error!("No entities with accumulated inputs/local player marker");
+                input_target.set(InputTarget::None);
+                None
+            }
+            QuerySingleError::MultipleEntities(_) => {
+                error!("Multiple entities with accumulated inputs/local player marker");
+                input_target.set(InputTarget::None);
+                None
+            }
+        }
+    };
+
+    let Some(mut input) = input_option else {
         return;
     };
 
@@ -201,7 +216,7 @@ pub(crate) struct AccumulatedInputs {
 }
 
 fn accumulate_mouse_movement(
-    mut mouse_motion_events: EventReader<MouseMotion>,
+    mut mouse_motion_events: MessageReader<MouseMotion>,
     mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>,
 ) {
     for ev in mouse_motion_events.read() {
@@ -217,8 +232,21 @@ fn accumulate_mouse_movement(
 }
 
 fn reset_inputs(mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>) {
-    let Ok(mut input) = inputs.single_mut() else {
-        error!("Multiple entities with accumulated inputs/local player marker ");
+    let input_option = match inputs.single_mut() {
+        Ok(input) => {Some(input)}
+        Err(error) => match error {
+            QuerySingleError::NoEntities(_) => {
+                error!("No entities with accumulated inputs/local player marker");
+                None
+            }
+            QuerySingleError::MultipleEntities(_) => {
+                error!("Multiple entities with accumulated inputs/local player marker");
+                None
+            }
+        }
+    };
+
+    let Some(mut input) = input_option else {
         return;
     };
 
@@ -232,10 +260,10 @@ struct TouchState {
 }
 
 fn handle_touch(
-    mut touch_inputs: EventReader<TouchInput>,
+    mut touch_inputs: MessageReader<TouchInput>,
     mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>,
     mut state: ResMut<TouchState>,
-    mut writer: EventWriter<PlayerInput>,
+    mut writer: MessageWriter<PlayerInput>,
 ) {
     for touch in touch_inputs.read() {
         let Ok(mut input) = inputs.single_mut() else {
@@ -310,21 +338,21 @@ fn draw_accumulated_inputs(
 }
 
 fn teleport(
-    trigger: Trigger<Pointer<Pressed>>,
+    trigger: On<Pointer<Press>>,
     input_target: Res<State<InputTarget>>,
     playable_area: Query<Entity, With<PlayableArea>>,
     pointers: Query<&PointerInteraction>,
-    mut writer: EventWriter<PlayerInput>,
+    mut writer: MessageWriter<PlayerInput>,
 ) {
     if input_target.get().to_owned() != InputTarget::Teleport {
         return;
     }
 
-    let Ok(_) = playable_area.get(trigger.target) else {
+    let Ok(_) = playable_area.get(trigger.entity) else {
         return;
     };
 
-    let points = get_points(trigger.target, pointers);
+    let points = get_points(trigger.entity, pointers);
 
     if let &[point] = points.as_slice() {
         writer.write(PlayerInput::Teleport(point));
@@ -334,21 +362,21 @@ fn teleport(
 }
 
 fn place_bumper(
-    trigger: Trigger<Pointer<Pressed>>,
+    trigger: On<Pointer<Press>>,
     input_target: Res<State<InputTarget>>,
     playable_area: Query<Entity, With<PlayableArea>>,
     pointers: Query<&PointerInteraction>,
-    mut writer: EventWriter<PlayerInput>,
+    mut writer: MessageWriter<PlayerInput>,
 ) {
     if input_target.get().to_owned() != InputTarget::Bumper {
         return;
     }
 
-    let Ok(_) = playable_area.get(trigger.target) else {
+    let Ok(_) = playable_area.get(trigger.entity) else {
         return;
     };
 
-    let points = get_points(trigger.target, pointers);
+    let points = get_points(trigger.entity, pointers);
 
     if let &[point] = points.as_slice() {
         writer.write(PlayerInput::Bumper(point));
@@ -358,21 +386,21 @@ fn place_bumper(
 }
 
 fn place_black_hole_bumper(
-    trigger: Trigger<Pointer<Pressed>>,
+    trigger: On<Pointer<Press>>,
     input_target: Res<State<InputTarget>>,
     playable_area: Query<Entity, With<PlayableArea>>,
     pointers: Query<&PointerInteraction>,
-    mut writer: EventWriter<PlayerInput>,
+    mut writer: MessageWriter<PlayerInput>,
 ) {
     if input_target.get().to_owned() != InputTarget::BlackHoleBumper {
         return;
     }
 
-    let Ok(_) = playable_area.get(trigger.target) else {
+    let Ok(_) = playable_area.get(trigger.entity) else {
         return;
     };
 
-    let points = get_points(trigger.target, pointers);
+    let points = get_points(trigger.entity, pointers);
 
     if let &[point] = points.as_slice() {
         writer.write(PlayerInput::BlackHoleBumper(point));

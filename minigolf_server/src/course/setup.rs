@@ -10,7 +10,7 @@ use {
     bevy::prelude::*,
     bevy_replicon::prelude::*,
     minigolf::{LevelMesh, PlayableArea, PowerUp, PowerUpType},
-    rand::Rng,
+    rand::prelude::*,
 };
 
 /// Plugin that handles course serialization to/from files
@@ -22,10 +22,7 @@ impl Plugin for CourseSetupPlugin {
         app.init_resource::<CourseConfiguration>();
 
         app.register_type::<SpawnBumper>();
-        app.add_event::<SpawnBumper>();
-
         app.register_type::<SpawnBlackHoleBumper>();
-        app.add_event::<SpawnBlackHoleBumper>();
 
         app.add_observer(spawn_bumper_trigger); // todo
         app.add_observer(spawn_black_hole_bumper_trigger); // todo
@@ -143,7 +140,7 @@ fn course_configuration_changed(
             Transform::default(),
             Visibility::default(),
             Replicated,
-            StateScoped(CourseState::Playing),
+            DespawnOnExit(CourseState::Playing),
         ))
         .id();
 
@@ -263,7 +260,7 @@ impl SpawnBumper {
 const BUMPER_HITS: usize = 3; // todo: hits based on player count?
 
 fn spawn_bumper_trigger(
-    trigger: Trigger<SpawnBumper>,
+    trigger: On<SpawnBumper>,
     current_hole: Res<CurrentHole>,
     mut commands: Commands,
 ) {
@@ -307,7 +304,7 @@ impl SpawnBlackHoleBumper {
 }
 
 fn spawn_black_hole_bumper_trigger(
-    trigger: Trigger<SpawnBlackHoleBumper>,
+    trigger: On<SpawnBlackHoleBumper>,
     current_hole: Res<CurrentHole>,
     mut commands: Commands,
 ) {

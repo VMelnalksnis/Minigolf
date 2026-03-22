@@ -30,12 +30,12 @@ fn setup(mut commands: Commands) {
     commands.spawn_batch([
         (
             Name::new("Bumper collision observer"),
-            StateScoped(ServerState::Playing),
+            DespawnOnExit(ServerState::Playing),
             Observer::new(apply_bumper_impulse),
         ),
         (
             Name::new("Jump pad collision observer"),
-            StateScoped(ServerState::Playing),
+            DespawnOnExit(ServerState::Playing),
             Observer::new(apply_jump_pad_impulse),
         ),
     ]);
@@ -63,18 +63,18 @@ impl Bumper {
 }
 
 fn apply_bumper_impulse(
-    trigger: Trigger<OnCollisionStart>,
+    trigger: On<CollisionStart>,
     mut bumpers: Query<(&Position, &mut Bumper)>,
     players: Query<&Position, With<Player>>,
-    mut commands: Commands,
+    mut forces : Query<Forces>,
     config: Res<Configuration>,
 ) {
-    let bumper_entity = trigger.target();
+    let bumper_entity = trigger.collider1;
     let Ok((bumper_position, mut bumper)) = bumpers.get_mut(bumper_entity) else {
         return;
     };
 
-    let other_entity = trigger.collider;
+    let other_entity = trigger.collider2;
     let Ok(player_position) = players.get(other_entity) else {
         return;
     };
@@ -87,9 +87,10 @@ fn apply_bumper_impulse(
         other_entity, direction
     );
 
-    commands
-        .entity(other_entity)
-        .insert(ExternalImpulse::new(direction * config.bumper_strength).with_persistence(false));
+    forces
+        .get_mut(other_entity)
+        .unwrap()
+        .apply_linear_impulse(direction * config.bumper_strength);
 
     if let Some(current_hits) = bumper.hits {
         bumper.hits = Some(current_hits - 1);
@@ -112,18 +113,18 @@ fn despawn_bumpers(bumpers: Query<(Entity, &Bumper), Changed<Bumper>>, mut comma
 pub(crate) struct JumpPad;
 
 fn apply_jump_pad_impulse(
-    trigger: Trigger<OnCollisionStart>,
+    trigger: On<CollisionStart>,
     jump_pads: Query<(), With<JumpPad>>,
     players: Query<(), With<Player>>,
-    mut commands: Commands,
+    mut forces: Query<Forces>,
     config: Res<Configuration>,
 ) {
-    let jump_pad_entity = trigger.target();
+    let jump_pad_entity = trigger.collider1;
     let Ok(_) = jump_pads.get(jump_pad_entity) else {
         return;
     };
 
-    let other_entity = trigger.collider;
+    let other_entity = trigger.collider2;
     let Ok(_) = players.get(other_entity) else {
         return;
     };
@@ -136,9 +137,10 @@ fn apply_jump_pad_impulse(
         other_entity, direction
     );
 
-    commands
-        .entity(other_entity)
-        .insert(ExternalImpulse::new(direction * config.jump_pad_strength).with_persistence(false));
+    forces
+        .get_mut(other_entity)
+        .unwrap()
+        .apply_linear_impulse(direction * config.jump_pad_strength);
 }
 
 #[derive(Component, Reflect, Debug)]
@@ -174,29 +176,26 @@ fn add_required_ball_magnet_components(
 
 fn apply_ball_magnet(
     magnets: Query<(Entity, &BallMagnet, &CollidingEntities)>,
-    mut players: Query<(Entity, Option<&mut ExternalImpulse>), With<Player>>,
+    mut players: Query<Entity, With<Player>>,
+    mut forces: Query<Forces>,
     transforms: Query<&GlobalTransform>,
-    mut commands: Commands,
 ) {
-    let players_hash_set = EntityHashSet::from_iter(players.iter().map(|(e, _)| e));
+    let players_hash_set = EntityHashSet::from_iter(players.iter());
 
     for (magnet_entity, ball_magnet, colliding_entities) in magnets.iter() {
         let magnet_transform = transforms.get(magnet_entity).unwrap();
 
         for player in colliding_entities.intersection(&players_hash_set) {
-            let (player, existing_impulse) = players.get_mut(*player).unwrap();
+            let player = players.get_mut(*player).unwrap();
 
             let player_transform = transforms.get(player).unwrap();
             let vector = magnet_transform.translation() - player_transform.translation();
             let normalized = vector.normalize() * ball_magnet.strength;
 
-            // todo: test if this is needed - added this because of a suspicion that this might not work together with wind
-            if let Some(mut impulse) = existing_impulse {
-                impulse.apply_impulse(normalized.into());
-            } else {
-                let impulse = ExternalImpulse::new(normalized.into()).with_persistence(false);
-                commands.entity(player).insert(impulse);
-            }
+            forces
+                .get_mut(player)
+                .unwrap()
+                .apply_linear_impulse(Vector::from(normalized));
         }
     }
 }

@@ -8,30 +8,30 @@ edition = "2024"
 authors = ["Valters Melnalksnis"]
 
 [workspace.dependencies]
-bevy = { version = "0.16.0", default-features = true }
-bevy_egui = { version = "0.34.1", default-features = true }
-bevy-inspector-egui = { version = "0.31.0", default-features = true }
-egui = { version = "0.31.1" }
-egui_dock = { version = "0.16.0" }
-transform-gizmo-egui = { version = "0.6.0" }
+bevy = { version = "0.18.1", default-features = false }
+bevy_egui = { version = "0.39.1", default-features = true }
+bevy-inspector-egui = { version = "0.36.0", default-features = true }
+egui = { version = "0.33.3" }
+egui_dock = { version = "0.18.0" }
 
-bevy_replicon = { version = "0.33.0", default-features = false }
+bevy_replicon = { version = "0.39.1", default-features = false }
 
-avian3d = { version = "0.3.0", default-features = false }
+avian3d = { version = "0.6.0", default-features = false }
 
-aeronet = { version = "0.14.0" }
-aeronet_websocket = { version = "0.14.0", default-features = false }
-aeronet_webtransport = { version = "0.14.0", default-features = false }
-aeronet_replicon = { version = "0.14.0", default-features = false }
+aeronet = { git = "https://github.com/liamaharon/aeronet.git", branch = "bevy_replicon_0.39" }
+aeronet_websocket = { git = "https://github.com/liamaharon/aeronet.git", branch = "bevy_replicon_0.39", default-features = false }
+aeronet_webtransport = { git = "https://github.com/liamaharon/aeronet.git", branch = "bevy_replicon_0.39", default-features = false }
+aeronet_replicon = { git = "https://github.com/liamaharon/aeronet.git", branch = "bevy_replicon_0.39", default-features = false }
 
-serde = "1.0.219"
-serde_json = "1.0.140"
+serde = "1.0.228"
+serde_json = "1.0.149"
 
-clap = "4.5.38"
+clap = "4.6.0"
 
-web-sys = { version = "0.3.77", default-features = false }
-uuid = { version = "1.16.0", default-features = false }
-rand = { version = "0.9.1", default-features = false }
+web-sys = { version = "0.3.91", default-features = false }
+uuid = { version = "1.22.0", default-features = false }
+rand = { version = "0.10.0", default-features = true }
+getrandom = { version = "0.4.2", default-features = true }
 
 # Enable a small amount of optimization in the dev profile.
 [profile.dev]

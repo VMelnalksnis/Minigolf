@@ -2,7 +2,7 @@ use {
     crate::ui::{ServerState, lobby_server::LobbyServerSession},
     aeronet::io::{Session, bytes::Bytes},
     bevy::prelude::*,
-    bevy_egui::{EguiContexts, egui},
+    bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui},
     minigolf::lobby::{PlayerId, user::ClientPacket},
 };
 
@@ -13,8 +13,8 @@ impl Plugin for LobbyUiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LobbyUi>();
 
-        app.configure_sets(Update, LobbyUiSet.run_if(in_state(ServerState::Lobby)))
-            .add_systems(Update, lobby_ui.in_set(LobbyUiSet));
+        app.configure_sets(EguiPrimaryContextPass, LobbyUiSet.run_if(in_state(ServerState::Lobby)))
+            .add_systems(EguiPrimaryContextPass, lobby_ui.in_set(LobbyUiSet));
     }
 }
 
@@ -71,7 +71,7 @@ fn lobby_ui(
     mut lobby_session: Query<&mut Session, With<LobbyServerSession>>,
     mut state: ResMut<NextState<ServerState>>,
 ) {
-    egui::Window::new("Lobby").show(context.ctx_mut(), |ui| {
+    egui::Window::new("Lobby").show(context.ctx_mut().unwrap(), |ui| {
         ui.horizontal(|ui| {
             ui.label(format!("Lobby ID: {}", lobby_ui.lobby_id));
         });

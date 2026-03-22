@@ -70,13 +70,13 @@ struct PlayerJoinedLobby(PlayerInLobby);
 struct PlayerDisconnected(PlayerInLobby);
 
 fn on_lobby_member_removed(
-    trigger: Trigger<OnRemove, LobbyMember>,
+    trigger: On<Remove, LobbyMember>,
     members: Query<(Entity, &LobbyMember), Without<Lobby>>,
     lobby: Query<(Entity, &LobbyMember), With<Lobby>>,
     players: Query<&Player>,
     mut commands: Commands,
 ) {
-    let entity = trigger.target();
+    let entity = trigger.entity;
     let Ok((_, lobby_member)) = members.get(entity) else {
         return;
     };

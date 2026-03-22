@@ -1,7 +1,7 @@
 use {
     crate::{LocalPlayer, input::InputTarget, ui::ServerState},
     bevy::prelude::*,
-    bevy_egui::{EguiContexts, egui},
+    bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui},
     minigolf::{Player, PlayerInput, PlayerPowerUps, PlayerScore, PowerUpType::*},
 };
 
@@ -11,10 +11,10 @@ pub(crate) struct PowerUpUiPlugin;
 impl Plugin for PowerUpUiPlugin {
     fn build(&self, app: &mut App) {
         app.configure_sets(
-            Update,
+            EguiPrimaryContextPass,
             PowerUpUiSet.run_if(in_state(ServerState::GameServer)),
         )
-        .add_systems(Update, (power_up_ui, score_board).in_set(PowerUpUiSet));
+        .add_systems(EguiPrimaryContextPass, (power_up_ui, score_board).in_set(PowerUpUiSet));
     }
 }
 
@@ -22,7 +22,7 @@ impl Plugin for PowerUpUiPlugin {
 struct PowerUpUiSet;
 
 fn score_board(mut context: EguiContexts, scores: Query<(&Player, &PlayerScore)>) {
-    egui::Window::new("Scoreboard").show(context.ctx_mut(), |ui| {
+    egui::Window::new("Scoreboard").show(context.ctx_mut().unwrap(), |ui| {
         ui.vertical(|ui| {
             for (player, score) in scores {
                 ui.horizontal(|ui| {
@@ -36,14 +36,14 @@ fn score_board(mut context: EguiContexts, scores: Query<(&Player, &PlayerScore)>
 fn power_up_ui(
     mut context: EguiContexts,
     player: Query<&PlayerPowerUps, With<LocalPlayer>>,
-    mut writer: EventWriter<PlayerInput>,
+    mut writer: MessageWriter<PlayerInput>,
     mut input_target: ResMut<NextState<InputTarget>>,
 ) {
     let Ok(power_ups) = player.single() else {
         return;
     };
 
-    egui::Window::new("Power ups").show(context.ctx_mut(), |ui| {
+    egui::Window::new("Power ups").show(context.ctx_mut().unwrap(), |ui| {
         ui.vertical(|ui| {
             for power_up_type in power_ups.get_power_ups() {
                 ui.horizontal(|ui| {

@@ -53,7 +53,7 @@ fn network_stats_ui(
                 }
 
                 if ui.button("Disconnect").clicked() {
-                    commands.trigger_targets(Disconnect::new("disconnected by user"), session);
+                    commands.trigger(Disconnect::new(session, "disconnected by user"));
                 }
             });
         }

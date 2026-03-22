@@ -1,6 +1,9 @@
 use {
     crate::ui::{ServerState, lobby::LobbyUi, lobby_server::LobbyServerSession},
-    aeronet::io::{Session, SessionEndpoint, connection::Disconnected},
+    aeronet::io::{Session, SessionEndpoint, connection::{
+        Disconnected,
+        DisconnectReason
+    }},
     aeronet_replicon::client::{AeronetRepliconClient, AeronetRepliconClientPlugin},
     aeronet_websocket::client::{WebSocketClient, WebSocketClientPlugin},
     aeronet_webtransport::{
@@ -100,8 +103,8 @@ pub(crate) fn connect_to_lobby_server(target: &str, mut commands: Commands) {
         .queue(WebSocketClient::connect(config, target));
 }
 
-fn on_connecting(trigger: Trigger<OnAdd, SessionEndpoint>, names: Query<&Name>) {
-    let entity = trigger.target();
+fn on_connecting(add: On<Add, SessionEndpoint>, names: Query<&Name>) {
+    let entity = add.entity;
     let name = names
         .get(entity)
         .expect("our session entity should have a name");
@@ -110,24 +113,24 @@ fn on_connecting(trigger: Trigger<OnAdd, SessionEndpoint>, names: Query<&Name>) 
 }
 
 fn on_disconnected(
-    trigger: Trigger<Disconnected>,
+    disconnected: On<Disconnected>,
     names: Query<&Name>,
     game_servers: Query<(), With<AeronetRepliconClient>>,
     mut state: ResMut<NextState<ServerState>>,
 ) {
-    let session = trigger.target();
+    let session = disconnected.entity;
     let name = names
         .get(session)
         .expect("our session entity should have a name");
 
-    match trigger.event() {
-        Disconnected::ByUser(reason) => {
+    match &disconnected.event().reason {
+        DisconnectReason::ByUser(reason) => {
             info!("{name} disconnected by user: {reason}");
         }
-        Disconnected::ByPeer(reason) => {
+        DisconnectReason::ByPeer(reason) => {
             info!("{name} disconnected by peer: {reason}");
         }
-        Disconnected::ByError(err) => {
+        DisconnectReason::ByError(err) => {
             info!("{name} disconnected due to error: {err:?}");
         }
     };
@@ -213,9 +216,9 @@ impl Authentication {
 }
 
 fn on_authentication_requested(
-    mut reader: EventReader<RequestAuthentication>,
+    mut reader: MessageReader<RequestAuthentication>,
     authentication: Option<Res<Authentication>>,
-    mut writer: EventWriter<AuthenticatePlayer>,
+    mut writer: MessageWriter<AuthenticatePlayer>,
 ) {
     for _ in reader.read() {
         let auth = match &authentication {

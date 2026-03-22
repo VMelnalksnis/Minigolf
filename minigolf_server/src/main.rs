@@ -5,7 +5,7 @@ use {
         network::{PlayerAuthenticated, ServerNetworkPlugin},
     },
     aeronet::io::connection::Disconnected,
-    avian3d::{math::Scalar, prelude::*},
+    avian3d::{math::Scalar, math::Vector, prelude::*},
     bevy::prelude::*,
     bevy_replicon::prelude::*,
     minigolf::{CourseDetails, MinigolfPlugin, Player, PlayerInput, PlayerPowerUps, PlayerScore},
@@ -35,24 +35,18 @@ fn main() -> AppExit {
         .insert_resource(Time::<Fixed>::from_hz(128.0))
         .insert_resource(SubstepCount(8))
         .insert_resource(PhysicsLengthUnit(0.005))
-        .insert_resource(DeactivationTime(0.2))
-        .insert_resource(SleepingThreshold {
-            angular: 10.0,
-            linear: 1.0,
-            ..default()
-        })
         .register_type::<Configuration>()
         .init_resource::<Configuration>()
         .add_systems(Startup, load_configuration)
         .add_systems(FixedPreUpdate, bevy_replicon::server::increment_tick)
-        .add_systems(FixedUpdate, recv_input.run_if(server_or_singleplayer))
+        .add_systems(FixedUpdate, recv_input.run_if(in_state(ClientState::Disconnected)))
         .add_systems(
             Update,
             on_player_authenticated.in_set(WaitingForPlayersSystems),
         )
         .add_systems(FixedUpdate, player_can_move.in_set(PlayingSystems))
         .add_systems(Update, (move_player, reset_can_move).in_set(PlayingSystems))
-        .add_event::<ValidPlayerInput>()
+        .add_message::<ValidPlayerInput>()
         .run()
 }
 
@@ -281,7 +275,7 @@ fn load_configuration(server: Res<AssetServer>, mut commands: Commands) {
     ));
 }
 
-#[derive(Event, Reflect, Debug)]
+#[derive(Message, Reflect, Debug)]
 pub(crate) struct ValidPlayerInput {
     pub(crate) player: Entity,
     pub(crate) input: PlayerInput, // todo: need to handle different input types
@@ -294,16 +288,20 @@ pub(crate) struct LastPlayerPosition {
 }
 
 fn recv_input(
-    mut inputs: EventReader<FromClient<PlayerInput>>,
+    mut inputs: MessageReader<FromClient<PlayerInput>>,
     mut sessions: Query<&PlayerSession>,
     mut players: Query<(&Player, &mut PlayerPowerUps)>,
-    mut writer: EventWriter<ValidPlayerInput>,
+    mut writer: MessageWriter<ValidPlayerInput>,
 ) {
     for &FromClient {
-        client_entity,
-        event: ref input,
+        client_id,
+        message: ref input,
     } in inputs.read()
     {
+        let ClientId::Client(client_entity) = client_id else {
+            continue;
+        };
+
         let Ok(session) = sessions.get_mut(client_entity) else {
             warn!(
                 "Received player input from {:?} without a session",
@@ -347,9 +345,9 @@ fn recv_input(
 }
 
 fn move_player(
-    mut reader: EventReader<ValidPlayerInput>,
+    mut reader: MessageReader<ValidPlayerInput>,
     chip_shot: Query<&ChipShotMarker>,
-    mut commands: Commands,
+    mut forces: Query<Forces>
 ) {
     for &ValidPlayerInput { ref input, player } in reader.read() {
         let PlayerInput::Move(movement) = input else {
@@ -362,14 +360,14 @@ fn move_player(
             Err(_) => 0.0,
         };
 
-        commands
-            .entity(player)
-            .insert(ExternalImpulse::new(force_vec.into()))
-            .remove::<ChipShotMarker>();
+        forces
+            .get_mut(player)
+            .unwrap()
+            .apply_linear_impulse(Vector::from(force_vec));
     }
 }
 
-fn reset_can_move(mut reader: EventReader<ValidPlayerInput>, mut players: Query<&mut Player>) {
+fn reset_can_move(mut reader: MessageReader<ValidPlayerInput>, mut players: Query<&mut Player>) {
     for input in reader.read() {
         let PlayerInput::Move(_) = input.input else {
             continue;
@@ -404,7 +402,7 @@ fn player_can_move(
     }
 }
 
-fn on_player_authenticated(mut reader: EventReader<PlayerAuthenticated>, mut commands: Commands) {
+fn on_player_authenticated(mut reader: MessageReader<PlayerAuthenticated>, mut commands: Commands) {
     for authenticated in reader.read() {
         commands.entity(authenticated.player).insert((
             LastPlayerPosition {
@@ -436,11 +434,11 @@ fn on_player_authenticated(mut reader: EventReader<PlayerAuthenticated>, mut com
 }
 
 fn on_disconnected(
-    trigger: Trigger<Disconnected>,
+    trigger: On<Disconnected>,
     sessions: Query<&PlayerSession>,
     mut commands: Commands,
 ) {
-    let client = trigger.target();
+    let client = trigger.entity;
     info!("Disconnected {:?}", client);
     let Ok(session) = sessions.get(client) else {
         return;

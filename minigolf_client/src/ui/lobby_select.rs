@@ -2,7 +2,7 @@ use {
     crate::ui::{ServerState, lobby_server::LobbyServerSession},
     aeronet::io::{Session, bytes::Bytes},
     bevy::prelude::*,
-    bevy_egui::{EguiContexts, egui},
+    bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui},
     minigolf::lobby::{LobbyId, user::ClientPacket},
 };
 
@@ -13,9 +13,9 @@ impl Plugin for LobbySelectUiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LobbiesUi>();
 
-        app.configure_sets(Update, LobbiesUiSet.run_if(in_state(ServerState::Lobbies)));
+        app.configure_sets(EguiPrimaryContextPass, LobbiesUiSet.run_if(in_state(ServerState::Lobbies)));
 
-        app.add_systems(Update, lobbies_ui.in_set(LobbiesUiSet));
+        app.add_systems(EguiPrimaryContextPass, lobbies_ui.in_set(LobbiesUiSet));
     }
 }
 
@@ -32,7 +32,7 @@ fn lobbies_ui(
     mut lobbies_ui: ResMut<LobbiesUi>,
     mut lobby_session: Query<&mut Session, With<LobbyServerSession>>,
 ) {
-    egui::Window::new("Select lobby").show(context.ctx_mut(), |ui| {
+    egui::Window::new("Select lobby").show(context.ctx_mut().unwrap(), |ui| {
         ui.horizontal(|ui| {
             ui.text_edit_singleline(&mut lobbies_ui.lobby_id);
 

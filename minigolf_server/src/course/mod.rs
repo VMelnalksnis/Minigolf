@@ -247,7 +247,7 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>, config: Res<Ga
     commands.spawn((
         Name::new("Course scene"),
         DynamicSceneRoot(server.load(format!("courses\\{course_id}.scn.ron"))),
-        StateScoped(ServerState::Playing),
+        DespawnOnExit(ServerState::Playing),
         CourseSceneMarker,
     ));
 }
@@ -259,12 +259,12 @@ fn test(hole: Option<Res<CurrentHole>>, mut state: ResMut<NextState<CourseState>
 }
 
 fn on_hole_added(
-    trigger: Trigger<OnAdd, Hole>,
+    trigger: On<Add, Hole>,
     mut course: Query<&mut Course>,
     hole: Query<&Hole>,
     mut commands: Commands,
 ) {
-    let hole_entity = trigger.target();
+    let hole_entity = trigger.entity;
     let mut course = course.single_mut().unwrap();
     course.holes.push(hole_entity);
 
@@ -278,7 +278,7 @@ fn on_hole_added(
     }
 }
 
-fn increment_score(mut reader: EventReader<ValidPlayerInput>, mut scores: Query<&mut PlayerScore>) {
+fn increment_score(mut reader: MessageReader<ValidPlayerInput>, mut scores: Query<&mut PlayerScore>) {
     for input in reader.read() {
         let PlayerInput::Move(_) = input.input else {
             continue;
@@ -315,7 +315,7 @@ fn handle_hole_sensors(
                 // todo: should this be done somewhere else? and re-enable wind after exiting?
                 commands
                     .entity(player_entity)
-                    .insert(ExternalForce::default());
+                    .insert(ConstantForce::default());
             } else {
                 info!("Player {:?} left hole {:?}", player, hole);
             }

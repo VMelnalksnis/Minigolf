@@ -66,7 +66,7 @@ fn interpolate_position(mut transforms: Query<(&mut Transform, &TargetTransform)
 }
 
 fn accumulate_mouse_movement(
-    mut mouse_motion_events: EventReader<MouseMotion>,
+    mut mouse_motion_events: MessageReader<MouseMotion>,
     mut inputs: Query<&mut TargetTransform, With<Camera3d>>,
 ) {
     for ev in mouse_motion_events.read() {
@@ -94,7 +94,7 @@ fn follow_player_with_camera(
 
 fn move_camera_based_on_scroll(
     mut camera: Query<&mut TargetTransform, With<Camera3d>>,
-    mut mouse_scroll_events: EventReader<MouseWheel>,
+    mut mouse_scroll_events: MessageReader<MouseWheel>,
 ) {
     for mouse_wheel in mouse_scroll_events.read() {
         let Ok(mut camera_transform) = camera.single_mut() else {

@@ -11,7 +11,7 @@ use {
     aeronet::io::{Session, connection::Disconnected},
     bevy::{
         ecs::query::QuerySingleError,
-        pbr::{DirectionalLightShadowMap, ShadowFilteringMethod},
+        light::{DirectionalLightShadowMap, ShadowFilteringMethod},
         prelude::{AlphaMode::Blend, *},
         window::PrimaryWindow,
     },
@@ -88,13 +88,13 @@ fn setup_level(mut commands: Commands) {
 }
 
 fn on_level_mesh_added(
-    trigger: Trigger<OnAdd, LevelMesh>,
+    add: On<Add, LevelMesh>,
     query: Query<&LevelMesh>,
     server: Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
 ) {
-    let entity = trigger.target();
+    let entity = add.entity;
     let level_mesh = query.get(entity).unwrap();
     let mesh_handle: Handle<Mesh> = server.load(level_mesh.clone().asset);
 
@@ -110,12 +110,12 @@ fn on_level_mesh_added(
 }
 
 fn on_power_up_added(
-    trigger: Trigger<OnAdd, PowerUp>,
+    add: On<Add, PowerUp>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
 ) {
-    let entity = trigger.target();
+    let entity = add.entity;
 
     commands.entity(entity).insert((
         Mesh3d(meshes.add(Sphere::new(0.1))),
@@ -136,16 +136,16 @@ fn on_power_up_added(
     ));
 }
 
-fn on_connected(_trigger: Trigger<OnAdd, Session>, mut game_state: ResMut<NextState<GameState>>) {
+fn on_connected(_trigger: On<Add, Session>, mut game_state: ResMut<NextState<GameState>>) {
     game_state.set(GameState::Playing);
 }
 
-fn on_disconnected(_trigger: Trigger<Disconnected>, mut game_state: ResMut<NextState<GameState>>) {
+fn on_disconnected(_trigger: On<Disconnected>, mut game_state: ResMut<NextState<GameState>>) {
     game_state.set(GameState::None);
 }
 
 fn on_player_added(
-    trigger: Trigger<OnAdd, Player>,
+    add: On<Add, Player>,
     server: Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
@@ -153,7 +153,7 @@ fn on_player_added(
     all_players: Query<(Entity, &Player)>,
     authentication: Res<Authentication>,
 ) {
-    let entity = trigger.target();
+    let entity = add.entity;
     let player_mesh_handle: Handle<Mesh> = server.load("Player.glb#Mesh0/Primitive0");
 
     commands.entity(entity).insert((
@@ -166,19 +166,31 @@ fn on_player_added(
         })),
     ));
 
-    if let Err(QuerySingleError::NoEntities(_)) = players.single() {
-        let x = all_players
-            .iter()
-            .filter(|(e, p)| *e == entity && p.id == authentication.id)
-            .map(|(e, _)| e)
-            .collect::<Vec<_>>();
-
-        if let &[_] = x.as_slice() {
-            commands
-                .entity(entity)
-                .insert((LocalPlayer, AccumulatedInputs::default()));
+    match players.single() {
+        Ok(_) => {
+            info!("Existing player {entity}");
         }
-    }
+        Err(error) => match error {
+            QuerySingleError::NoEntities(_) => {
+                let x = all_players
+                    .iter()
+                    .filter(|(e, p)| *e == entity && p.id == authentication.id)
+                    .map(|(e, _)| e)
+                    .collect::<Vec<_>>();
+
+                if let &[_] = x.as_slice() {
+                    info!("Initializing local player {entity}");
+
+                    commands
+                        .entity(entity)
+                        .insert((LocalPlayer, AccumulatedInputs::default()));
+                }
+            }
+            QuerySingleError::MultipleEntities(_) => {
+                info!("Multiple entities");
+            }
+        },
+    };
 }
 
 /// Just to be safe that all entities from the server are removed

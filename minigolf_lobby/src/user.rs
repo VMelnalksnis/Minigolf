@@ -51,11 +51,11 @@ fn open_listener(mut commands: Commands, args: Res<Args>) {
 }
 
 fn on_opened(
-    trigger: Trigger<OnAdd, Server>,
+    trigger: On<Add, Server>,
     addresses: Query<&LocalAddr>,
     users: Query<&UserListener>,
 ) {
-    let server = trigger.target();
+    let server = trigger.entity;
     let local_addr = addresses
         .get(server)
         .expect("opened server should have a binding socket `LocalAddr`");
@@ -66,13 +66,13 @@ fn on_opened(
 }
 
 fn on_connected(
-    trigger: Trigger<OnAdd, Session>,
+    trigger: On<Add, Session>,
     mut sessions: Query<&mut Session>,
     servers: Query<&ChildOf>,
     users: Query<&UserListener>,
     mut commands: Commands,
 ) {
-    let client = trigger.target();
+    let client = trigger.entity;
     let server = servers
         .get(client)
         .expect("connected session should have a server")
@@ -181,11 +181,11 @@ fn handle_messages(
 }
 
 fn on_lobby_id_added(
-    trigger: Trigger<OnAdd, LobbyMember>,
+    trigger: On<Add, LobbyMember>,
     world: &World,
     lobby_ids: Query<(Entity, &LobbyMember)>,
 ) {
-    let entity = trigger.target();
+    let entity = trigger.entity;
     let (_, lobby_id) = lobby_ids.get(entity).unwrap();
 
     println!(
@@ -215,7 +215,7 @@ fn on_lobby_id_added(
 }
 
 fn game_started(
-    mut game_started_reader: EventReader<GameStarted>,
+    mut game_started_reader: MessageReader<GameStarted>,
     mut members: Query<(&LobbyMember, &mut Session), With<UserSession>>,
 ) {
     for game_started in &mut game_started_reader.read() {
@@ -231,7 +231,7 @@ fn game_started(
 }
 
 fn on_player_joined_lobby(
-    trigger: Trigger<PlayerJoinedLobby>,
+    trigger: On<PlayerJoinedLobby>,
     mut sessions: Query<(&LobbyMember, &mut Session), With<UserSession>>,
 ) {
     let player = trigger.event();
@@ -246,7 +246,7 @@ fn on_player_joined_lobby(
 }
 
 fn on_player_disconnected(
-    trigger: Trigger<PlayerDisconnected>,
+    trigger: On<PlayerDisconnected>,
     mut sessions: Query<(&LobbyMember, &mut Session), With<UserSession>>,
 ) {
     let player = trigger.event();

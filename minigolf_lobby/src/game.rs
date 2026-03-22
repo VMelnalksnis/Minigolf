@@ -30,7 +30,7 @@ impl Plugin for GameServerPlugin {
 
         app.add_systems(Update, handle_messages);
 
-        app.add_event::<GameStarted>();
+        app.add_message::<GameStarted>();
     }
 }
 
@@ -59,11 +59,11 @@ fn open_listener(mut commands: Commands, args: Res<Args>) {
 }
 
 fn on_opened(
-    trigger: Trigger<OnAdd, Server>,
+    trigger: On<Add, Server>,
     addresses: Query<&LocalAddr>,
     games: Query<&GamerServerListener>,
 ) {
-    let server = trigger.target();
+    let server = trigger.entity;
     let local_addr = addresses
         .get(server)
         .expect("opened server should have a binding socket `LocalAddr`");
@@ -74,12 +74,12 @@ fn on_opened(
 }
 
 fn on_connected(
-    trigger: Trigger<OnAdd, Session>,
+    trigger: On<Add, Session>,
     servers: Query<&ChildOf>,
     games: Query<&GamerServerListener>,
     mut commands: Commands,
 ) {
-    let client = trigger.target();
+    let client = trigger.entity;
     let server = servers
         .get(client)
         .expect("connected session should have a server")
@@ -93,7 +93,7 @@ fn on_connected(
 
 fn handle_messages(
     mut sessions: Query<(Entity, &mut Session), With<GameServerSession>>,
-    mut game_started_writer: EventWriter<GameStarted>,
+    mut game_started_writer: MessageWriter<GameStarted>,
     game_servers: Query<&GameServer>,
     mut commands: Commands,
 ) {
@@ -139,20 +139,20 @@ fn handle_messages(
     }
 }
 
-fn on_game_server_added(trigger: Trigger<OnAdd, GameServer>, servers: Query<&GameServer>) {
-    let connected_server = servers.get(trigger.target()).unwrap();
+fn on_game_server_added(trigger: On<Add, GameServer>, servers: Query<&GameServer>) {
+    let connected_server = servers.get(trigger.entity).unwrap();
     let all_servers = &servers.iter().collect::<Vec<_>>();
 
     info!("Added new game server {connected_server:?}, all servers {all_servers:?}");
 }
 
 fn on_game_server_removed(
-    trigger: Trigger<OnRemove, GameServer>,
+    trigger: On<Remove, GameServer>,
     servers: Query<(Entity, &GameServer)>,
 ) {
     let remaining = &servers
         .iter()
-        .filter(|(e, _)| *e != trigger.target())
+        .filter(|(e, _)| *e != trigger.entity)
         .map(|(_, s)| s)
         .collect::<Vec<_>>();
 
@@ -173,7 +173,7 @@ impl From<&LobbyMember> for StartGame {
 }
 
 fn on_start_game(
-    trigger: Trigger<StartGame>,
+    trigger: On<StartGame>,
     mut servers: Query<&mut Session, With<GameServer>>,
     lobby_players: Query<(&LobbyMember, &Player, &PlayerCredentials)>,
 ) {
@@ -201,7 +201,7 @@ fn on_start_game(
     }
 }
 
-#[derive(Debug, Event)]
+#[derive(Debug, Message)]
 pub(crate) struct GameStarted {
     pub(crate) lobby_id: LobbyId,
     pub(crate) server: String,

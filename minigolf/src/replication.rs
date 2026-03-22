@@ -3,14 +3,11 @@ use {
     bevy_replicon::{
         bytes::Bytes,
         prelude::*,
-        shared::{
-            postcard_utils,
-            replication::replication_registry::{
-                command_fns::MutWrite,
-                ctx::{SerializeCtx, WriteCtx},
-                rule_fns::RuleFns,
-            },
-        },
+        postcard_utils,
+        shared::replication::registry::{
+            ctx::{SerializeCtx, WriteCtx},
+            receive_fns::MutWrite
+        }
     },
     serde::{Serialize, de::DeserializeOwned},
 };

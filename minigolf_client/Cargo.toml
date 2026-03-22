@@ -8,7 +8,7 @@ authors.workspace = true
 [dependencies]
 minigolf = { path = "../minigolf" }
 
-bevy = { workspace = true, features = ["bevy_picking"] }
+bevy = { workspace = true, features = ["3d"] }
 bevy_egui = { workspace = true, features = ["manage_clipboard"] }
 
 aeronet = { workspace = true }
@@ -19,11 +19,13 @@ bevy_replicon = { workspace = true, features = ["client"] }
 aeronet_replicon = { workspace = true, features = ["client"] }
 web-sys = { workspace = true, features = ["Window", "Document", "Element", "HtmlCanvasElement", "CssStyleDeclaration"] }
 
+getrandom = { workspace = true, features = ["wasm_js"] }
+
 bevy-inspector-egui = { workspace = true, optional = true }
 
 [features]
 dev = [
     "bevy-inspector-egui",
-    "bevy/bevy_dev_tools",
+    "bevy/dev",
     "bevy/dynamic_linking"
 ]

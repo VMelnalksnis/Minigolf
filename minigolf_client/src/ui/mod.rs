@@ -19,9 +19,7 @@ pub(crate) struct ClientUiPlugin;
 
 impl Plugin for ClientUiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(EguiPlugin {
-            enable_multipass_for_primary_context: false,
-        });
+        app.add_plugins(EguiPlugin::default());
 
         #[cfg(feature = "dev")]
         {

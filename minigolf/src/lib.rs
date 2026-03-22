@@ -49,9 +49,9 @@ impl Plugin for MinigolfPlugin {
         register_replicated::<LevelMesh>(app);
         register_replicated::<PlayableArea>(app);
 
-        app.add_server_event::<RequestAuthentication>(Channel::Ordered);
-        app.add_client_event::<AuthenticatePlayer>(Channel::Ordered);
-        app.add_client_event::<PlayerInput>(Channel::Ordered);
+        app.add_server_message::<RequestAuthentication>(Channel::Ordered);
+        app.add_client_message::<AuthenticatePlayer>(Channel::Ordered);
+        app.add_client_message::<PlayerInput>(Channel::Ordered);
     }
 }
 
@@ -65,7 +65,7 @@ pub struct CourseDetails {
 
 /// Marker component for a player in the game.
 #[derive(Component, Reflect, Serialize, Deserialize, Debug, Copy, Clone)]
-#[require(StateScoped::<GameState>(GameState::Playing))]
+#[require(DespawnOnExit::<GameState>(GameState::Playing))]
 pub struct Player {
     pub id: PlayerId,
     pub can_move: bool,
@@ -107,7 +107,7 @@ impl Default for PlayerCredentials {
 pub struct PlayableArea;
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Debug)]
-#[require(StateScoped::<GameState>(GameState::Playing))]
+#[require(DespawnOnExit::<GameState>(GameState::Playing))]
 pub struct LevelMesh {
     pub asset: String,
 }
@@ -119,7 +119,7 @@ impl LevelMesh {
 }
 
 /// Player's inputs that they send to control their box.
-#[derive(Event, Reflect, Serialize, Deserialize, Clone, Copy, PartialEq, Debug)]
+#[derive(Message, Reflect, Serialize, Deserialize, Clone, Copy, PartialEq, Debug)]
 pub enum PlayerInput {
     /// Move in the specified direction with the specified force.
     Move(Vec2),
@@ -185,13 +185,13 @@ impl PlayerInput {
     }
 }
 
-#[derive(Debug, Clone, Event, Serialize, Deserialize, Reflect)]
+#[derive(Debug, Clone, Message, Serialize, Deserialize, Reflect)]
 pub struct AuthenticatePlayer {
     pub id: PlayerId,
     pub credentials: PlayerCredentials,
 }
 
-#[derive(Debug, Clone, Event, Serialize, Deserialize, Reflect)]
+#[derive(Debug, Clone, Message, Serialize, Deserialize, Reflect)]
 pub struct RequestAuthentication;
 
 #[derive(Component, Reflect, Serialize, Deserialize, Default, Debug)]

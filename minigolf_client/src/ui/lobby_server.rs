@@ -2,7 +2,7 @@ use {
     crate::{network::connect_to_lobby_server, ui::ServerState},
     aeronet::io::Session,
     bevy::prelude::*,
-    bevy_egui::{EguiContexts, egui},
+    bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui},
 };
 
 // UI for selecting the lobby server
@@ -15,7 +15,7 @@ impl Plugin for LobbyServerUiPlugin {
         app.init_resource::<LobbyServerUi>();
 
         app.configure_sets(
-            Update,
+            EguiPrimaryContextPass,
             LobbyServerUiSet.run_if(in_state(ServerState::LobbyServer)),
         );
 
@@ -23,7 +23,7 @@ impl Plugin for LobbyServerUiPlugin {
             OnEnter(ServerState::LobbyServer),
             connect_to_default_lobby_server,
         )
-        .add_systems(Update, lobby_server_ui.in_set(LobbyServerUiSet));
+        .add_systems(EguiPrimaryContextPass, lobby_server_ui.in_set(LobbyServerUiSet));
 
         app.add_observer(on_connected_to_lobby_server);
     }
@@ -53,7 +53,7 @@ fn lobby_server_ui(
     mut context: EguiContexts,
     mut ui_state: ResMut<LobbyServerUi>,
 ) {
-    egui::Window::new("Select lobby server").show(context.ctx_mut(), |ui| {
+    egui::Window::new("Select lobby server").show(context.ctx_mut().unwrap(), |ui| {
         let enter_pressed = ui.input(|state| state.key_pressed(egui::Key::Enter));
 
         let mut connect = false;
@@ -78,11 +78,11 @@ fn lobby_server_ui(
 }
 
 fn on_connected_to_lobby_server(
-    trigger: Trigger<OnAdd, Session>,
+    trigger: On<Add, Session>,
     lobby_servers: Query<(&Session, &Name), With<LobbyServerSession>>,
     mut next_state: ResMut<NextState<ServerState>>,
 ) {
-    let entity = trigger.target();
+    let entity = trigger.entity;
     let Ok((_session, name)) = lobby_servers.get(entity) else {
         return;
     };
