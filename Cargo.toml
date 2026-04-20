@@ -30,7 +30,7 @@ clap = "4.6.0"
 
 web-sys = { version = "0.3.91", default-features = false }
 uuid = { version = "1.22.0", default-features = false }
-rand = { version = "0.10.0", default-features = true }
+rand = { version = "0.10.1", default-features = true }
 getrandom = { version = "0.4.2", default-features = true }
 
 # Enable a small amount of optimization in the dev profile.
