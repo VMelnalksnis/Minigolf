@@ -21,11 +21,16 @@ impl Plugin for CameraInputPlugin {
         app.add_systems(
             Update,
             (
-                follow_player_with_camera,
-                move_camera_based_on_scroll,
+                (
+                    follow_player_with_camera,
+                    move_camera_based_on_scroll,
+                    accumulate_mouse_movement.run_if(in_state(InputTarget::Camera)),
+                ),
+                // Must run after the target is updated, otherwise the camera looks at the
+                // previous ball position on some frames and the ball appears to jitter.
                 interpolate_position,
-                accumulate_mouse_movement.run_if(in_state(InputTarget::Camera)),
             )
+                .chain()
                 .in_set(CameraInputSet),
         );
     }
