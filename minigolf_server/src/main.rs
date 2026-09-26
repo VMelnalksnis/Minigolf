@@ -271,7 +271,7 @@ impl Default for Configuration {
 fn load_configuration(server: Res<AssetServer>, mut commands: Commands) {
     commands.spawn((
         Name::new("Configuration"),
-        DynamicSceneRoot(server.load("config.scn.ron")),
+        DynamicWorldRoot(server.load("config.scn.ron")),
     ));
 }
 

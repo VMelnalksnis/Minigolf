@@ -51,7 +51,7 @@ impl Plugin for MinigolfInputPlugin {
         app.configure_sets(
             Update,
             InputSet
-                .run_if(in_state(GameState::Playing).and(in_state(InputState::CanMove)))
+                .run_if(in_state(GameState::Playing).and_then(in_state(InputState::CanMove)))
                 .after(ValidateInputSet),
         );
 

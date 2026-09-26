@@ -284,7 +284,7 @@ fn on_connected_while_waiting(
     info!("{:?} sessions", x);
 
     writer.write(ToClients {
-        mode: SendMode::Direct(ClientId::Client(client)),
+        targets: SendTargets::Single(ClientId::Client(client)),
         message: RequestAuthentication,
     });
 }

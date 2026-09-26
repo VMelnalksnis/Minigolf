@@ -19,16 +19,16 @@ fn network_stats_ui(
     mut commands: Commands,
     mut egui: EguiContexts,
     sessions: Query<(Entity, &Name, Option<&Session>), With<SessionEndpoint>>,
-    replicon_client: Res<RepliconClient>,
+    client_state: Res<State<ClientState>>,
+    stats: Res<ClientStats>,
 ) {
-    let stats = replicon_client.stats();
-    egui::Window::new("Session Log").show(egui.ctx_mut(), |ui| {
+    egui::Window::new("Session Log").show(egui.ctx_mut().unwrap(), |ui| {
         ui.label("Replicon reports:");
         ui.horizontal(|ui| {
-            ui.label(match replicon_client.status() {
-                RepliconClientStatus::Disconnected => "Disconnected",
-                RepliconClientStatus::Connecting => "Connecting",
-                RepliconClientStatus::Connected { .. } => "Connected",
+            ui.label(match client_state.get() {
+                ClientState::Disconnected => "Disconnected",
+                ClientState::Connecting => "Connecting",
+                ClientState::Connected => "Connected",
             });
             ui.separator();
 

@@ -246,7 +246,7 @@ fn setup_course(mut commands: Commands, server: Res<AssetServer>, config: Res<Ga
 
     commands.spawn((
         Name::new("Course scene"),
-        DynamicSceneRoot(server.load(format!("courses\\{course_id}.scn.ron"))),
+        DynamicWorldRoot(server.load(format!("courses\\{course_id}.scn.ron"))),
         DespawnOnExit(ServerState::Playing),
         CourseSceneMarker,
     ));

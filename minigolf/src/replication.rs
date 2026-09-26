@@ -28,7 +28,7 @@ pub(crate) fn get_child_of_serialization_rules() -> RuleFns<ChildOf> {
 }
 
 fn serialize_child_of(
-    _ctx: &SerializeCtx,
+    _ctx: &mut SerializeCtx,
     child_of: &ChildOf,
     message: &mut Vec<u8>,
 ) -> Result<()> {

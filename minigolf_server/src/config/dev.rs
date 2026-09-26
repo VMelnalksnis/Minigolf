@@ -12,7 +12,7 @@ use {
         tasks::IoTaskPool,
         window::PrimaryWindow,
     },
-    bevy_egui::{EguiContext, EguiContextSettings, EguiPlugin, EguiPrimaryContextPass},
+    bevy_egui::{EguiContext, EguiPlugin, EguiPrimaryContextPass},
     bevy_inspector_egui::{
         DefaultInspectorConfigPlugin,
         bevy_inspector::hierarchy::hierarchy_ui,
@@ -61,21 +61,28 @@ fn show_ui_system(world: &mut World) {
     };
 
     let mut context = context.clone();
-    world.resource_scope::<UiState, _>(|world, mut ui_state| ui_state.ui(world, context.get_mut()));
+    let ctx = context.get_mut();
+    let mut ui = egui::Ui::new(
+        ctx.clone(),
+        "viewport".into(),
+        egui::UiBuilder::new()
+            .layer_id(egui::LayerId::background())
+            .max_rect(ctx.viewport_rect()),
+    );
+    world.resource_scope::<UiState, _>(|world, mut ui_state| ui_state.ui(world, &mut ui));
 }
 
 // make camera only render to view not obstructed by UI
 fn set_camera_viewport(
     ui_state: Res<UiState>,
     primary_window: Query<&mut Window, With<PrimaryWindow>>,
-    settings: Single<&EguiContextSettings>,
     mut cam: Single<&mut Camera>,
 ) {
     let Ok(window) = primary_window.single() else {
         return;
     };
 
-    let scale_factor = window.scale_factor() * settings.scale_factor;
+    let scale_factor = window.scale_factor();
 
     let viewport_pos = ui_state.viewport_rect.left_top().to_vec2() * scale_factor;
     let viewport_size = ui_state.viewport_rect.size() * scale_factor;
@@ -146,7 +153,7 @@ impl UiState {
         }
     }
 
-    fn ui(&mut self, world: &mut World, ctx: &mut egui::Context) {
+    fn ui(&mut self, world: &mut World, ui: &mut egui::Ui) {
         let mut tab_viewer = TabViewer {
             world,
             viewport_rect: &mut self.viewport_rect,
@@ -155,8 +162,8 @@ impl UiState {
             gizmo: &mut self.gizmo,
         };
         DockArea::new(&mut self.state)
-            .style(Style::from_egui(ctx.style().as_ref()))
-            .show(ctx, &mut tab_viewer);
+            .style(Style::from_egui(&ui.global_style()))
+            .show_inside(ui, &mut tab_viewer);
     }
 }
 
@@ -384,7 +391,7 @@ fn save_configuration(world: &mut World) {
     let app_type_registry = world.resource::<AppTypeRegistry>();
     let type_registry = app_type_registry.read();
 
-    let scene = DynamicSceneBuilder::from_world(world)
+    let scene = DynamicWorldBuilder::from_world(world, &type_registry)
         .deny_all_resources()
         .allow_resource::<Configuration>()
         .extract_resources()
@@ -410,7 +417,7 @@ fn save_scene(world: &mut World) {
     let app_type_registry = world.resource::<AppTypeRegistry>();
     let type_registry = app_type_registry.read();
 
-    let scene = DynamicSceneBuilder::from_world(world)
+    let scene = DynamicWorldBuilder::from_world(world, &type_registry)
         .deny_all_resources()
         .allow_resource::<CourseConfiguration>()
         .extract_resources()

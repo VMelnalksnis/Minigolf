@@ -68,7 +68,7 @@ fn setup_level(mut commands: Commands) {
     commands.spawn((
         DirectionalLight {
             illuminance: 1000.0,
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             shadow_depth_bias: 0.005,
             ..default()
         },
@@ -130,7 +130,7 @@ fn on_power_up_added(
             range: 20.0,
             color: Color::srgb(0.3, 0.3, 0.7),
             radius: 0.1,
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
     ));
