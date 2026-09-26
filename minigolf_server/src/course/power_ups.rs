@@ -1,12 +1,15 @@
 use {
     crate::{
-        HoleState, LastPlayerPosition, PlayingSystems, ServerState, ValidPlayerInput,
+        HoleState, LastPlayerPosition, PlayingSystems, ValidPlayerInput,
         course::{
             Configuration, CurrentHole, HoleSensor, HoleWalls,
             setup::{SpawnBlackHoleBumper, SpawnBumper},
         },
     },
-    avian3d::{math::Vector, prelude::*},
+    avian3d::{
+        math::{Scalar, Vector},
+        prelude::*,
+    },
     bevy::prelude::*,
     minigolf::{CourseEffect, Player, PlayerInput, PlayerPowerUps, PowerUp},
 };
@@ -17,9 +20,22 @@ impl Plugin for PowerUpPlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<HoleMagnetPowerUp>();
         app.register_type::<StickyBall>();
+        app.register_type::<AwakeAtStepStart>();
+        app.register_required_components::<Player, AwakeAtStepStart>();
         app.register_type::<ChipShotMarker>();
 
-        app.add_systems(OnEnter(ServerState::Playing), setup_observers);
+        // Runs after the solver, like collision events. Checked every step instead of on
+        // `CollisionStart`, because all walls of a hole are a single collider, so hitting a wall
+        // while already touching another one does not start a new collision.
+        app.add_systems(
+            PhysicsSchedule,
+            (
+                record_awake_at_step_start.in_set(PhysicsStepSystems::First),
+                apply_sticky_effects
+                    .in_set(PhysicsStepSystems::Finalize)
+                    .run_if(in_state(HoleState::Playing)),
+            ),
+        );
 
         app.add_systems(Update, apply_power_ups.in_set(PlayingSystems));
 
@@ -39,14 +55,6 @@ impl Plugin for PowerUpPlugin {
             (remove_sticky_ball, despawn_winds),
         );
     }
-}
-
-fn setup_observers(mut commands: Commands) {
-    commands.spawn((
-        Name::new("Apply sticky effects observer"),
-        DespawnOnExit(ServerState::Playing),
-        Observer::new(on_player_collided),
-    ));
 }
 
 /// Indicates that [minigolf::PowerUpType::ChipShot] should apply to the next hit for the player.
@@ -251,50 +259,320 @@ fn remove_hole_magnet(
 #[derive(Component, Reflect)]
 pub(crate) struct StickyBall;
 
-fn on_player_collided(
-    trigger: On<CollisionStart>,
-    walls: Query<(), With<HoleWalls>>,
-    course_effects: Query<&CourseEffect, With<HoleWalls>>,
-    players: Query<&Player>,
-    sticky_players: Query<(), (With<Player>, With<StickyBall>)>,
-    mut velocities: Query<(&mut LinearVelocity, &mut AngularVelocity)>,
+/// Whether the player was awake at the start of the current physics step.
+///
+/// Bodies are woken up after the solver, so in the step where a sleeping ball is woken up (e.g. by
+/// a shot), its contacts still contain data from before it fell asleep.
+#[derive(Component, Reflect, Default)]
+struct AwakeAtStepStart(bool);
+
+fn record_awake_at_step_start(mut players: Query<(&mut AwakeAtStepStart, Has<Sleeping>)>) {
+    for (mut awake, sleeping) in &mut players {
+        awake.0 = !sleeping;
+    }
+}
+
+fn apply_sticky_effects(
+    mut players: Query<
+        (
+            Entity,
+            &Player,
+            &AwakeAtStepStart,
+            Has<StickyBall>,
+            &mut LinearVelocity,
+            &mut AngularVelocity,
+        ),
+        Without<Sleeping>,
+    >,
+    walls: Query<Option<&CourseEffect>, With<HoleWalls>>,
+    collisions: Collisions,
     mut commands: Commands,
 ) {
-    let player_entity = trigger.collider1;
-    let Ok(player) = players.get(player_entity) else {
-        return;
-    };
+    for (player_entity, player, awake, sticky_ball, mut linear, mut angular) in &mut players {
+        // Contacts are outdated in the step where the ball wakes up.
+        if player.can_move || !awake.0 {
+            continue;
+        }
 
-    if player.can_move {
-        return;
+        let hit_walls = collisions.collisions_with(player_entity).find(|pair| {
+            let other_entity = match pair.collider1 == player_entity {
+                true => pair.collider2,
+                false => pair.collider1,
+            };
+
+            let Ok(effect) = walls.get(other_entity) else {
+                return false;
+            };
+
+            if !sticky_ball && effect != Some(&CourseEffect::StickyWalls) {
+                return false;
+            }
+
+            // Only stick when the ball hits the wall. Otherwise a ball that was stuck to a wall
+            // gets stuck again right after the next shot, when it is moving away from or along it.
+            // Contact points also include speculative contacts for walls the ball might reach, so
+            // also require that the wall actually pushed the ball back during this step.
+            pair.manifolds
+                .iter()
+                .flat_map(|manifold| manifold.points.iter())
+                .any(|point| {
+                    point.normal_speed < -STICKY_MIN_APPROACH_SPEED && point.normal_impulse > 0.0
+                })
+        });
+
+        let Some(hit_walls) = hit_walls else {
+            continue;
+        };
+
+        info!(
+            "Applying sticky effect for player {:?}, walls {:?}",
+            player_entity, hit_walls
+        );
+
+        commands.entity(player_entity).insert(Sleeping);
+        linear.0 = Vector::ZERO;
+        angular.0 = Vector::ZERO;
     }
-
-    let other_entity = trigger.collider2;
-    let Ok(_) = walls.get(other_entity) else {
-        return;
-    };
-
-    let sticky_walls = course_effects
-        .get(other_entity)
-        .is_ok_and(|effect| *effect == CourseEffect::StickyWalls);
-
-    if !sticky_walls && sticky_players.get(player_entity).is_err() {
-        return;
-    }
-
-    info!(
-        "Applying sticky effect for player {:?}, walls {:?}",
-        player_entity, other_entity
-    );
-
-    commands.entity(player_entity).insert(Sleeping);
-    let (mut linear, mut angular) = velocities.get_mut(player_entity).unwrap();
-    linear.0 = Vector::ZERO;
-    angular.0 = Vector::ZERO;
 }
+
+/// Minimum speed (m/s) towards a wall at which a sticky effect is applied.
+const STICKY_MIN_APPROACH_SPEED: Scalar = 0.01;
 
 fn remove_sticky_ball(players: Query<Entity, With<Player>>, mut commands: Commands) {
     players.iter().for_each(|entity| {
         commands.entity(entity).remove::<StickyBall>();
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::{
+            PhysicsConfigPlugin, get_ball_physics_bundle,
+            course::{CurrentHole, Hole},
+            move_player, player_can_move, reset_can_move,
+        },
+        bevy::time::TimeUpdateStrategy,
+        minigolf::lobby::PlayerId,
+        std::time::Duration,
+    };
+
+    #[test]
+    fn ball_sticks_to_wall() {
+        let mut app = app();
+        spawn_walls(&mut app, true);
+        let ball = spawn_ball(&mut app, 0.0, 0.0);
+
+        shoot(&mut app, ball, Vec2::X);
+        step(&mut app, 200);
+
+        assert!(can_move(&app, ball));
+        let position = position(&app, ball);
+        assert!(
+            (position.x - AGAINST_WALL_X).abs() < 0.002,
+            "ball should rest against the wall, but is at {position}"
+        );
+    }
+
+    #[test]
+    fn fast_ball_sticks_at_wall() {
+        let mut app = app();
+        spawn_walls(&mut app, true);
+        let ball = spawn_ball(&mut app, 0.0, 0.0);
+
+        shoot(&mut app, ball, Vec2::X * 10.0);
+        step(&mut app, 200);
+
+        assert!(can_move(&app, ball));
+        let position = position(&app, ball);
+        assert!(
+            (position.x - AGAINST_WALL_X).abs() < 0.002,
+            "ball should rest against the wall, but is at {position}"
+        );
+    }
+
+    #[test]
+    fn ball_bounces_off_normal_wall() {
+        let mut app = app();
+        spawn_walls(&mut app, false);
+        let ball = spawn_ball(&mut app, 0.0, 0.0);
+
+        shoot(&mut app, ball, Vec2::X);
+        step(&mut app, 200);
+
+        let position = position(&app, ball);
+        assert!(
+            position.x < AGAINST_WALL_X - 0.05,
+            "ball should bounce back from the wall, but is at {position}"
+        );
+    }
+
+    #[test]
+    fn ball_can_leave_wall_it_is_stuck_to() {
+        let mut app = app();
+        spawn_walls(&mut app, true);
+        let ball = spawn_ball(&mut app, 0.0, 0.0);
+
+        shoot(&mut app, ball, Vec2::X);
+        step(&mut app, 200);
+
+        shoot(&mut app, ball, Vec2::NEG_X);
+        step(&mut app, 60);
+
+        let position = position(&app, ball);
+        assert!(
+            position.x < AGAINST_WALL_X - 0.2,
+            "ball should move away from the wall, but is at {position}"
+        );
+    }
+
+    #[test]
+    fn ball_rolls_along_wall_and_sticks_to_perpendicular_wall() {
+        let mut app = app();
+        spawn_walls(&mut app, true);
+        // Touching the wall at z = -0.075.
+        let ball = spawn_ball(&mut app, 0.0, (-0.075 + BALL_RADIUS) as f32);
+
+        shoot(&mut app, ball, Vec2::X);
+        step(&mut app, 200);
+
+        assert!(can_move(&app, ball));
+        let position = position(&app, ball);
+        assert!(
+            (position.x - AGAINST_WALL_X).abs() < 0.002,
+            "ball should roll along the wall and stick to the perpendicular wall, but is at {position}"
+        );
+    }
+
+    const BALL_RADIUS: Scalar = 0.021336;
+    /// Impulse that gives the ball a speed of about 1 m/s.
+    const SHOT: f32 = 0.046;
+
+    /// X coordinate of the ball's center when resting against the wall at x = 0.5.
+    const AGAINST_WALL_X: Scalar = 0.5 - 0.025 - BALL_RADIUS;
+
+    fn app() -> App {
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            TransformPlugin,
+            AssetPlugin::default(),
+            bevy::mesh::MeshPlugin,
+            bevy::scene::ScenePlugin,
+            bevy::diagnostic::DiagnosticsPlugin,
+            PhysicsPlugins::default(),
+            PhysicsConfigPlugin,
+        ));
+        // Normally registered by the diagnostics UI.
+        app.init_resource::<avian3d::collider_tree::ColliderTreeDiagnostics>();
+        app.init_resource::<avian3d::spatial_query::SpatialQueryDiagnostics>();
+        app.init_resource::<avian3d::collision::CollisionDiagnostics>();
+        app.init_resource::<avian3d::dynamics::solver::SolverDiagnostics>();
+
+        // Run exactly one physics step per update.
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
+            1.0 / 128.0,
+        )));
+
+        app.register_required_components::<Player, AwakeAtStepStart>();
+        app.add_message::<ValidPlayerInput>();
+        app.insert_resource(CurrentHole {
+            hole: Hole {
+                start_position: Vec3::ZERO,
+            },
+            hole_entity: Entity::PLACEHOLDER,
+            players: vec![],
+        });
+
+        app.add_systems(
+            PhysicsSchedule,
+            (
+                record_awake_at_step_start.in_set(PhysicsStepSystems::First),
+                apply_sticky_effects.in_set(PhysicsStepSystems::Finalize),
+            ),
+        );
+        app.add_systems(FixedUpdate, player_can_move);
+        app.add_systems(Update, (move_player, reset_can_move));
+
+        app.world_mut().spawn((
+            Name::new("Floor"),
+            RigidBody::Static,
+            Collider::cuboid(2.0, 0.1, 2.0),
+            Transform::from_xyz(0.0, -0.05, 0.0),
+        ));
+
+        app
+    }
+
+    /// Spawns walls with a wall at x = 0.5 and a wall at z = -0.075, as a single collider.
+    fn spawn_walls(app: &mut App, sticky: bool) {
+        let mut walls = app.world_mut().spawn((
+            Name::new("Walls"),
+            HoleWalls {
+                hole_entity: Entity::PLACEHOLDER,
+            },
+            walls_collider(),
+            Transform::default(),
+        ));
+
+        if sticky {
+            walls.insert(CourseEffect::StickyWalls);
+        }
+    }
+
+    /// Trimesh collider like the one created from the walls mesh of a hole.
+    fn walls_collider() -> Collider {
+        let wall =
+            |center: Vec3, size: Vec3| Mesh::from(Cuboid::from_size(size)).translated_by(center);
+
+        let mut mesh = wall(Vec3::new(0.5, 0.0, 0.0), Vec3::new(0.05, 0.3, 2.0));
+        mesh.merge(&wall(Vec3::new(0.0, 0.0, -0.1), Vec3::new(2.0, 0.3, 0.05)))
+            .unwrap();
+
+        Collider::trimesh_from_mesh_with_config(&mesh, TrimeshFlags::all()).unwrap()
+    }
+
+    fn spawn_ball(app: &mut App, x: f32, z: f32) -> Entity {
+        app.world_mut()
+            .spawn((
+                Player {
+                    id: PlayerId::new(),
+                    can_move: true,
+                },
+                LastPlayerPosition {
+                    position: Vec3::ZERO,
+                    rotation: Quat::IDENTITY,
+                },
+                Transform::from_xyz(x, BALL_RADIUS as f32, z),
+                get_ball_physics_bundle(),
+            ))
+            .id()
+    }
+
+    fn shoot(app: &mut App, ball: Entity, direction: Vec2) {
+        assert!(
+            can_move(app, ball),
+            "ball must be able to move before shooting"
+        );
+
+        app.world_mut().write_message(ValidPlayerInput {
+            player: ball,
+            input: PlayerInput::Move(direction * SHOT),
+        });
+    }
+
+    fn step(app: &mut App, steps: usize) {
+        for _ in 0..steps {
+            app.update();
+        }
+    }
+
+    fn position(app: &App, ball: Entity) -> Vector {
+        app.world().get::<Position>(ball).unwrap().0
+    }
+
+    fn can_move(app: &App, ball: Entity) -> bool {
+        app.world().get::<Player>(ball).unwrap().can_move
+    }
 }

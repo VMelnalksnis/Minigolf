@@ -32,9 +32,7 @@ fn main() -> AppExit {
         .add_plugins(StatesPlugin)
         .add_plugins(CoursePlugin)
         .add_observer(on_disconnected)
-        .insert_resource(Time::<Fixed>::from_hz(128.0))
-        .insert_resource(SubstepCount(8))
-        .insert_resource(PhysicsLengthUnit(0.005))
+        .add_plugins(PhysicsConfigPlugin)
         .register_type::<Configuration>()
         .init_resource::<Configuration>()
         .add_systems(Startup, load_configuration)
@@ -48,6 +46,40 @@ fn main() -> AppExit {
         .add_systems(Update, (move_player, reset_can_move).in_set(PlayingSystems))
         .add_message::<ValidPlayerInput>()
         .run()
+}
+
+/// Physics settings for the game simulation.
+pub(crate) struct PhysicsConfigPlugin;
+
+impl Plugin for PhysicsConfigPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(Time::<Fixed>::from_hz(128.0));
+        app.insert_resource(SubstepCount(8));
+        app.insert_resource(PhysicsLengthUnit(0.005));
+    }
+}
+
+/// Physics components of a players ball.
+pub(crate) fn get_ball_physics_bundle() -> impl Bundle {
+    (
+        RigidBody::Dynamic,
+        Collider::sphere(0.021336),
+        CollisionLayers::new(GameLayer::Player, [GameLayer::Default]),
+        Mass::from(0.04593),
+        SweptCcd::default(),
+        CollisionEventsEnabled,
+        Friction::new(0.2),
+        Restitution::new(0.99),
+        AngularDamping(1.0),
+        LinearDamping(0.5),
+        // Linear threshold is scaled by `PhysicsLengthUnit`: 2.0 * 0.005 = 1 cm/s. The avian
+        // default (0.75 mm/s) leaves the ball crawling imperceptibly for several seconds.
+        // 0.5 rad/s matches rolling at ~1 cm/s for the ball's radius.
+        SleepThreshold {
+            linear: 2.0,
+            angular: 0.5,
+        },
+    )
 }
 
 struct StatesPlugin;
@@ -414,26 +446,8 @@ fn on_player_authenticated(mut reader: MessageReader<PlayerAuthenticated>, mut c
                 PlayerScore::default(),
                 PlayerPowerUps::default(),
                 Replicated,
-                RigidBody::Dynamic,
-                Collider::sphere(0.021336),
-                CollisionLayers::new(GameLayer::Player, [GameLayer::Default]),
-                Mass::from(0.04593),
                 Transform::from_translation(Vec3::ZERO),
-                SweptCcd::default(),
-                CollisionEventsEnabled,
-            ))
-            .insert((
-                Friction::new(0.2),
-                Restitution::new(0.99),
-                AngularDamping(1.0),
-                LinearDamping(0.5),
-                // Linear threshold is scaled by `PhysicsLengthUnit`: 2.0 * 0.005 = 1 cm/s. The avian
-                // default (0.75 mm/s) leaves the ball crawling imperceptibly for several seconds.
-                // 0.5 rad/s matches rolling at ~1 cm/s for the ball's radius.
-                SleepThreshold {
-                    linear: 2.0,
-                    angular: 0.5,
-                },
+                get_ball_physics_bundle(),
             ));
 
         commands
