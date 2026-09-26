@@ -262,7 +262,7 @@ fn setup_waiting_for_players(
 }
 
 fn on_connected_while_waiting(
-    trigger: On<Add, Session>,
+    trigger: On<Add, AuthorizedClient>,
     parent: Query<&ChildOf>,
     sessions: Query<Entity, (With<Session>, Without<PlayerCredentials>)>,
     mut writer: MessageWriter<ToClients<RequestAuthentication>>,

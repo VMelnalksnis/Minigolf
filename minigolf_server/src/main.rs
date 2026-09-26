@@ -347,7 +347,7 @@ fn recv_input(
 fn move_player(
     mut reader: MessageReader<ValidPlayerInput>,
     chip_shot: Query<&ChipShotMarker>,
-    mut forces: Query<Forces>
+    mut forces: Query<Forces>,
 ) {
     for &ValidPlayerInput { ref input, player } in reader.read() {
         let PlayerInput::Move(movement) = input else {
@@ -404,26 +404,37 @@ fn player_can_move(
 
 fn on_player_authenticated(mut reader: MessageReader<PlayerAuthenticated>, mut commands: Commands) {
     for authenticated in reader.read() {
-        commands.entity(authenticated.player).insert((
-            LastPlayerPosition {
-                position: Vec3::ZERO,
-                rotation: Quat::IDENTITY,
-            },
-            PlayerScore::default(),
-            PlayerPowerUps::default(),
-            Replicated,
-            RigidBody::Dynamic,
-            Collider::sphere(0.021336),
-            CollisionLayers::new(GameLayer::Player, [GameLayer::Default]),
-            Mass::from(0.04593),
-            Transform::from_translation(Vec3::ZERO),
-            Friction::new(0.2),
-            Restitution::new(0.99),
-            AngularDamping(1.0),
-            LinearDamping(0.5),
-            SweptCcd::default(),
-            CollisionEventsEnabled,
-        ));
+        commands
+            .entity(authenticated.player)
+            .insert((
+                LastPlayerPosition {
+                    position: Vec3::ZERO,
+                    rotation: Quat::IDENTITY,
+                },
+                PlayerScore::default(),
+                PlayerPowerUps::default(),
+                Replicated,
+                RigidBody::Dynamic,
+                Collider::sphere(0.021336),
+                CollisionLayers::new(GameLayer::Player, [GameLayer::Default]),
+                Mass::from(0.04593),
+                Transform::from_translation(Vec3::ZERO),
+                SweptCcd::default(),
+                CollisionEventsEnabled,
+            ))
+            .insert((
+                Friction::new(0.2),
+                Restitution::new(0.99),
+                AngularDamping(1.0),
+                LinearDamping(0.5),
+                // Linear threshold is scaled by `PhysicsLengthUnit`: 2.0 * 0.005 = 1 cm/s. The avian
+                // default (0.75 mm/s) leaves the ball crawling imperceptibly for several seconds.
+                // 0.5 rad/s matches rolling at ~1 cm/s for the ball's radius.
+                SleepThreshold {
+                    linear: 2.0,
+                    angular: 0.5,
+                },
+            ));
 
         commands
             .entity(authenticated.session)
