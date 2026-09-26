@@ -8,7 +8,7 @@ use {
     },
     avian3d::{math::Vector, prelude::*},
     bevy::prelude::*,
-    minigolf::{Player, PlayerInput, PlayerPowerUps, PowerUp},
+    minigolf::{CourseEffect, Player, PlayerInput, PlayerPowerUps, PowerUp},
 };
 
 pub(crate) struct PowerUpPlugin;
@@ -16,7 +16,6 @@ pub(crate) struct PowerUpPlugin;
 impl Plugin for PowerUpPlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<HoleMagnetPowerUp>();
-        app.register_type::<StickyWalls>();
         app.register_type::<StickyBall>();
         app.register_type::<ChipShotMarker>();
 
@@ -113,14 +112,14 @@ fn apply_power_ups(
                     .next()
                     .unwrap();
 
-                commands.entity(walls).insert(StickyWalls);
+                commands.entity(walls).insert(CourseEffect::StickyWalls);
             }
 
             PlayerInput::IceRink => {
-                // todo: visual effect
-                commands
-                    .entity(current_hole.hole_entity)
-                    .insert(Friction::new(0.01).with_combine_rule(CoefficientCombine::Min));
+                commands.entity(current_hole.hole_entity).insert((
+                    Friction::new(0.01).with_combine_rule(CoefficientCombine::Min),
+                    CourseEffect::IceRink,
+                ));
             }
 
             _ => {
@@ -250,15 +249,12 @@ fn remove_hole_magnet(
 }
 
 #[derive(Component, Reflect)]
-struct StickyWalls;
-
-#[derive(Component, Reflect)]
 pub(crate) struct StickyBall;
 
 fn on_player_collided(
     trigger: On<CollisionStart>,
     walls: Query<(), With<HoleWalls>>,
-    sticky_walls: Query<(), (With<HoleWalls>, With<StickyWalls>)>,
+    course_effects: Query<&CourseEffect, With<HoleWalls>>,
     players: Query<&Player>,
     sticky_players: Query<(), (With<Player>, With<StickyBall>)>,
     mut velocities: Query<(&mut LinearVelocity, &mut AngularVelocity)>,
@@ -278,7 +274,11 @@ fn on_player_collided(
         return;
     };
 
-    if sticky_walls.get(other_entity).is_err() && sticky_players.get(player_entity).is_err() {
+    let sticky_walls = course_effects
+        .get(other_entity)
+        .is_ok_and(|effect| *effect == CourseEffect::StickyWalls);
+
+    if !sticky_walls && sticky_players.get(player_entity).is_err() {
         return;
     }
 

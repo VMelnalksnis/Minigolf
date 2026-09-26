@@ -48,6 +48,7 @@ impl Plugin for MinigolfPlugin {
 
         register_replicated::<LevelMesh>(app);
         register_replicated::<PlayableArea>(app);
+        register_replicated::<CourseEffect>(app);
 
         app.add_server_message::<RequestAuthentication>(Channel::Ordered);
         app.add_client_message::<AuthenticatePlayer>(Channel::Ordered);
@@ -105,6 +106,15 @@ impl Default for PlayerCredentials {
 /// Marker component for entities that the player can interact with.
 #[derive(Component, Reflect, Serialize, Deserialize, Copy, Clone, Debug)]
 pub struct PlayableArea;
+
+/// A power up effect that modifies a part of the course, e.g. the walls or the floor of a hole.
+#[derive(Component, Reflect, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Debug)]
+pub enum CourseEffect {
+    /// Walls stop the ball on contact, see [PowerUpType::StickyWalls].
+    StickyWalls,
+    /// The floor is slippery, see [PowerUpType::IceRink].
+    IceRink,
+}
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Debug)]
 #[require(DespawnOnExit::<GameState>(GameState::Playing))]

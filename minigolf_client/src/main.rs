@@ -16,7 +16,7 @@ use {
         window::PrimaryWindow,
     },
     bevy_replicon::prelude::*,
-    minigolf::{GameState, LevelMesh, MinigolfPlugin, Player, PowerUp},
+    minigolf::{CourseEffect, GameState, LevelMesh, MinigolfPlugin, Player, PowerUp},
     web_sys::{HtmlCanvasElement, wasm_bindgen::JsCast},
 };
 
@@ -37,6 +37,7 @@ fn main() -> AppExit {
         .add_observer(on_level_mesh_added)
         .add_observer(on_power_up_added)
         .add_observer(on_disconnected)
+        .add_systems(Update, show_course_effects)
         .add_systems(OnExit(ServerState::GameServer), despawn_replicated)
         .run()
 }
@@ -107,6 +108,42 @@ fn on_level_mesh_added(
             ..default()
         })),
     ));
+}
+
+/// Tints the parts of the course affected by power ups, e.g. [CourseEffect::StickyWalls].
+fn show_course_effects(
+    meshes: Query<
+        (&MeshMaterial3d<StandardMaterial>, Option<&CourseEffect>),
+        (
+            With<LevelMesh>,
+            Or<(Changed<CourseEffect>, Added<MeshMaterial3d<StandardMaterial>>)>,
+        ),
+    >,
+    mut removed: RemovedComponents<CourseEffect>,
+    level_meshes: Query<&MeshMaterial3d<StandardMaterial>, With<LevelMesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let mut set_color = |material: &MeshMaterial3d<StandardMaterial>, effect: Option<&CourseEffect>| {
+        let Some(mut material) = materials.get_mut(&material.0) else {
+            return;
+        };
+
+        material.base_color = match effect {
+            None => Color::WHITE,
+            Some(CourseEffect::StickyWalls) => Color::srgb(0.9, 0.55, 0.1),
+            Some(CourseEffect::IceRink) => Color::srgb(0.6, 0.85, 1.0),
+        };
+    };
+
+    for (material, effect) in &meshes {
+        set_color(material, effect);
+    }
+
+    for entity in removed.read() {
+        if let Ok(material) = level_meshes.get(entity) {
+            set_color(material, None);
+        }
+    }
 }
 
 fn on_power_up_added(
