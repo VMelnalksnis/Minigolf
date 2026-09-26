@@ -218,14 +218,18 @@ pub(crate) struct AccumulatedInputs {
 fn accumulate_mouse_movement(
     mut mouse_motion_events: MessageReader<MouseMotion>,
     mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>,
+    camera: Query<&Transform, With<Camera3d>>,
 ) {
+    let Ok(camera) = camera.single() else {
+        return;
+    };
+
     for ev in mouse_motion_events.read() {
         let Ok(mut input) = inputs.single_mut() else {
             continue;
         };
 
-        input.input.y -= ev.delta.x / 400.0;
-        input.input.x += ev.delta.y / 400.0;
+        input.input += camera_relative_delta(ev.delta / 400.0, camera);
 
         input.input = input.input.clamp_length_max(1.0);
     }
@@ -264,7 +268,12 @@ fn handle_touch(
     mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>,
     mut state: ResMut<TouchState>,
     mut writer: MessageWriter<PlayerInput>,
+    camera: Query<&Transform, With<Camera3d>>,
 ) {
+    let Ok(camera) = camera.single() else {
+        return;
+    };
+
     for touch in touch_inputs.read() {
         let Ok(mut input) = inputs.single_mut() else {
             continue;
@@ -282,8 +291,7 @@ fn handle_touch(
                     Some(last) => touch.position - last,
                 };
 
-                input.input.y -= delta.x / 100.0;
-                input.input.x += delta.y / 100.0;
+                input.input += camera_relative_delta(delta / 100.0, camera);
 
                 input.input = input.input.clamp_length_max(1.0);
 
@@ -440,4 +448,15 @@ fn draw_mesh_picking_target(pointers: Query<&PointerInteraction>, mut gizmos: Gi
             bevy::color::palettes::basic::PURPLE,
         );
     }
+}
+
+/// Converts a screen-space drag delta into a world-space (x, z) input delta, relative to the
+/// direction the camera is facing: dragging down pushes the ball away from the camera and
+/// dragging right pushes it to the left of the screen.
+fn camera_relative_delta(delta: Vec2, camera: &Transform) -> Vec2 {
+    let forward = camera.forward().with_y(0.0).normalize_or_zero();
+    let right = forward.cross(Vec3::Y);
+
+    let world = forward * delta.y - right * delta.x;
+    Vec2::new(world.x, world.z)
 }
