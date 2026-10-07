@@ -2,8 +2,8 @@ use {
     crate::{
         HoleState, LastPlayerPosition, PlayingSystems, ValidPlayerInput,
         course::{
-            Configuration, CurrentHole, HoleSensor, HoleWalls,
-            entities::{BUMPER_HEIGHT, BUMPER_RADIUS},
+            Configuration, CurrentHole, HOLE_SENSOR_HEIGHT, HoleSensor, HoleWalls,
+            entities::{AttractsOnly, BUMPER_HEIGHT, BUMPER_RADIUS},
             setup::{SpawnBlackHoleBumper, SpawnBumper},
         },
     },
@@ -12,14 +12,17 @@ use {
         prelude::*,
     },
     bevy::{ecs::system::SystemParam, prelude::*},
-    minigolf::{CourseEffect, Player, PlayerInput, PlayerPowerUps, PowerUp, PowerUpType},
+    bevy_replicon::prelude::*,
+    minigolf::{
+        Attractor, CourseEffect, Player, PlayerInput, PlayerPowerUps, PowerUp, PowerUpType,
+    },
 };
 
 pub(crate) struct PowerUpPlugin;
 
 impl Plugin for PowerUpPlugin {
     fn build(&self, app: &mut App) {
-        app.register_type::<HoleMagnetPowerUp>();
+        app.register_type::<HoleMagnet>();
         app.register_type::<StickyBall>();
         app.register_type::<AwakeAtStepStart>();
         app.register_required_components::<Player, AwakeAtStepStart>();
@@ -34,6 +37,7 @@ impl Plugin for PowerUpPlugin {
                 record_awake_at_step_start.in_set(PhysicsStepSystems::First),
                 apply_sticky_effects
                     .in_set(PhysicsStepSystems::Finalize)
+                    .in_set(StickyEffectSystems)
                     .run_if(in_state(HoleState::Playing)),
             ),
         );
@@ -45,18 +49,21 @@ impl Plugin for PowerUpPlugin {
             (
                 handle_power_up_sensors,
                 apply_winds,
-                apply_hole_magnet,
-                remove_hole_magnet,
+                remove_hole_magnets,
             )
                 .in_set(PlayingSystems),
         );
 
         app.add_systems(
             OnEnter(HoleState::Completed),
-            (remove_sticky_ball, despawn_winds),
+            (remove_sticky_ball, despawn_winds, despawn_hole_magnets),
         );
     }
 }
+
+/// Stops balls that hit sticky walls, or walls when sticky.
+#[derive(SystemSet, Clone, PartialEq, Eq, Hash, Debug)]
+pub(crate) struct StickyEffectSystems;
 
 /// Indicates that [minigolf::PowerUpType::ChipShot] should apply to the next hit for the player.
 #[derive(Component, Reflect, Debug)]
@@ -70,6 +77,8 @@ fn apply_power_ups(
     hole_walls: Query<(Entity, &HoleWalls)>,
     bumper_placement: BumperPlacement,
     mut power_ups: Query<&mut PlayerPowerUps>,
+    hole_sensors: Query<(&HoleSensor, &Transform)>,
+    config: Res<Configuration>,
 ) {
     for &ValidPlayerInput { input, player } in reader.read() {
         match input {
@@ -83,7 +92,34 @@ fn apply_power_ups(
             }
 
             PlayerInput::HoleMagnet => {
-                commands.entity(player).insert(HoleMagnetPowerUp);
+                let sensor = hole_sensors
+                    .iter()
+                    .find(|(sensor, _)| sensor.hole == current_hole.hole_entity);
+
+                let Some((_, sensor_transform)) = sensor else {
+                    refund_power_up(player, PowerUpType::HoleMagnet, &mut power_ups);
+                    continue;
+                };
+
+                let magnet = commands.spawn((
+                    Name::new("Hole magnet"),
+                    HoleMagnet,
+                    Attractor {
+                        radius: config.hole_magnet_max_distance,
+                        min_radius: config.hole_magnet_min_distance,
+                        strength: config.hole_magnet_strength,
+                    },
+                    AttractsOnly(player),
+                    // On the top of the sensor, which is level with the floor.
+                    Transform::from_translation(
+                        sensor_transform
+                            .transform_point(Vec3::Y * (HOLE_SENSOR_HEIGHT / 2.0) as f32),
+                    ),
+                    Replicated,
+                    ChildOf(current_hole.hole_entity),
+                ));
+
+                info!("Spawned hole magnet {:?} for player {:?}", magnet.id(), player);
             }
 
             PlayerInput::ChipShot => {
@@ -170,6 +206,7 @@ struct BumperPlacement<'w, 's> {
     /// Sensors that a bumper can be placed in, e.g. power ups and the bounds of the hole, but not
     /// the hole itself.
     ignored_sensors: Query<'w, 's, (), (With<Sensor>, Without<HoleSensor>)>,
+    names: Query<'w, 's, &'static Name>,
 }
 
 impl BumperPlacement<'_, '_> {
@@ -197,7 +234,7 @@ impl BumperPlacement<'_, '_> {
 
         // Shorter than the bumper, so that it does not touch the floor or what is below it.
         let shape = Collider::cylinder(BUMPER_RADIUS, BUMPER_HEIGHT / 2.0);
-        let blocked = self
+        let blocking = self
             .spatial_query
             .shape_intersections(
                 &shape,
@@ -206,9 +243,15 @@ impl BumperPlacement<'_, '_> {
                 &SpatialQueryFilter::default(),
             )
             .into_iter()
-            .any(|entity| entity != hole_entity && !self.ignored_sensors.contains(entity));
+            .filter(|entity| *entity != hole_entity && !self.ignored_sensors.contains(*entity))
+            .map(|entity| match self.names.get(entity) {
+                Ok(name) => format!("{name} ({entity})"),
+                Err(_) => entity.to_string(),
+            })
+            .collect::<Vec<_>>();
 
-        if blocked {
+        if !blocking.is_empty() {
+            info!("Bumper at {center} is blocked by {blocking:?}");
             return None;
         }
 
@@ -290,50 +333,26 @@ fn despawn_winds(winds: Query<Entity, With<Wind>>, mut commands: Commands) {
     winds.iter().for_each(|e| commands.entity(e).despawn());
 }
 
+/// Marker for the [Attractor] of the [PowerUpType::HoleMagnet] power up, which pulls only the ball
+/// of the player who used it until their next shot ends.
 #[derive(Component, Reflect)]
-struct HoleMagnetPowerUp;
+struct HoleMagnet;
 
-fn apply_hole_magnet(
-    current_hole: Res<CurrentHole>,
-    transforms: Query<&GlobalTransform>,
-    players: Query<(Entity, &GlobalTransform), (With<Player>, With<HoleMagnetPowerUp>)>,
-    time: Res<Time<Fixed>>,
-    config: Res<Configuration>,
-    mut forces: Query<Forces>
+fn remove_hole_magnets(
+    magnets: Query<(Entity, &AttractsOnly), With<HoleMagnet>>,
+    stopped_players: Query<(), (With<Player>, Changed<LastPlayerPosition>)>,
+    mut commands: Commands,
 ) {
-    let Ok(hole_transform) = transforms.get(current_hole.hole_entity) else {
-        return;
-    };
-
-    for (player, transform) in players.iter() {
-        let vector = hole_transform.translation() - transform.translation();
-        let distance = vector.length();
-
-        if distance >= config.hole_magnet_max_distance
-            || distance <= config.hole_magnet_min_distance
-        {
-            continue;
+    for (magnet, attracts_only) in &magnets {
+        if stopped_players.contains(attracts_only.0) {
+            info!("Removing hole magnet {:?}, the ball stopped", magnet);
+            commands.entity(magnet).despawn();
         }
-
-        let force = vector.normalize() * time.delta_secs() * config.hole_magnet_strength;
-        forces.get_mut(player).unwrap().apply_force(force.into());
     }
 }
 
-fn remove_hole_magnet(
-    players: Query<
-        Entity,
-        (
-            With<Player>,
-            With<HoleMagnetPowerUp>,
-            Changed<LastPlayerPosition>,
-        ),
-    >,
-    mut commands: Commands,
-) {
-    players.iter().for_each(|player| {
-        commands.entity(player).remove::<HoleMagnetPowerUp>();
-    });
+fn despawn_hole_magnets(magnets: Query<Entity, With<HoleMagnet>>, mut commands: Commands) {
+    magnets.iter().for_each(|e| commands.entity(e).despawn());
 }
 
 #[derive(Component, Reflect)]
@@ -430,7 +449,7 @@ mod tests {
         super::*,
         crate::{
             PhysicsConfigPlugin, get_ball_physics_bundle,
-            course::{CurrentHole, Hole},
+            course::{CurrentHole, Hole, entities::apply_attractors},
             move_player, player_can_move, reset_can_move,
         },
         bevy::{ecs::system::RunSystemOnce, time::TimeUpdateStrategy},
@@ -562,6 +581,93 @@ mod tests {
         step(&mut app, 1);
 
         assert_eq!(place_bumper(&mut app, Vec3::new(2.32, 0.0, 0.1)), None);
+    }
+
+    #[test]
+    fn hole_magnet_pulls_ball_towards_hole_sensor() {
+        let mut app = app();
+        spawn_hole_with_sensor(&mut app);
+        let ball = spawn_ball(&mut app, 0.0, 0.0);
+
+        use_hole_magnet(&mut app, ball);
+        step(&mut app, 30);
+
+        let position = position(&app, ball);
+        assert!(
+            position.x > 0.02 && position.z.abs() < 0.001,
+            "ball should move towards the hole sensor, but is at {position}"
+        );
+    }
+
+    #[test]
+    fn hole_magnet_does_not_pull_other_balls() {
+        let mut app = app();
+        spawn_hole_with_sensor(&mut app);
+        let ball = spawn_ball(&mut app, 0.0, 0.0);
+        let other_ball = spawn_ball(&mut app, 0.15, 0.1);
+
+        use_hole_magnet(&mut app, ball);
+        step(&mut app, 30);
+
+        let position = position(&app, other_ball);
+        assert!(
+            (position.z - 0.1).abs() < 0.001,
+            "other ball should not move, but is at {position}"
+        );
+    }
+
+    #[test]
+    fn hole_magnet_is_removed_when_ball_stops() {
+        let mut app = app();
+        spawn_hole_with_sensor(&mut app);
+        let ball = spawn_ball(&mut app, 0.0, 0.0);
+
+        use_hole_magnet(&mut app, ball);
+        step(&mut app, 2);
+        assert_eq!(hole_magnets(&mut app), 1);
+
+        app.world_mut()
+            .get_mut::<LastPlayerPosition>(ball)
+            .unwrap()
+            .set_changed();
+        step(&mut app, 2);
+        assert_eq!(hole_magnets(&mut app), 0);
+    }
+
+    /// Spawns the current hole with its origin away from the sensor, like in a course, and the
+    /// sensor at (0.15, -0.05, 0).
+    fn spawn_hole_with_sensor(app: &mut App) {
+        app.init_resource::<Configuration>();
+        app.add_systems(Update, apply_power_ups);
+        app.add_systems(FixedUpdate, (apply_attractors, remove_hole_magnets));
+
+        let hole = app
+            .world_mut()
+            .spawn(Transform::from_xyz(-0.5, 0.0, 0.0))
+            .id();
+        app.world_mut().resource_mut::<CurrentHole>().hole_entity = hole;
+        app.world_mut().spawn((
+            HoleSensor::new(hole),
+            Transform::from_xyz(0.65, -0.05, 0.0),
+            ChildOf(hole),
+        ));
+    }
+
+    fn use_hole_magnet(app: &mut App, ball: Entity) {
+        // A newly spawned ball counts as having just stopped, which would remove the magnet.
+        step(app, 2);
+
+        app.world_mut().write_message(ValidPlayerInput {
+            player: ball,
+            input: PlayerInput::HoleMagnet,
+        });
+    }
+
+    fn hole_magnets(app: &mut App) -> usize {
+        app.world_mut()
+            .query_filtered::<(), With<HoleMagnet>>()
+            .iter(app.world())
+            .count()
     }
 
     /// Spawns the current hole with a floor at y = 0, offset and rotated like the holes of a

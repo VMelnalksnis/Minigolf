@@ -1,3 +1,4 @@
+mod collisions;
 mod entities;
 pub(crate) mod power_ups;
 pub(crate) mod setup;
@@ -7,10 +8,14 @@ use {
         Configuration, CourseState, GameLayer, GameState, HoleState, LastPlayerPosition,
         LoadingCourseSystems, PlayingSystems, ServerState, ValidPlayerInput,
         course::{
-            entities::CourseEntitiesPlugin, power_ups::PowerUpPlugin, setup::CourseSetupPlugin,
+            collisions::CollisionEventsPlugin, entities::CourseEntitiesPlugin,
+            power_ups::PowerUpPlugin, setup::CourseSetupPlugin,
         },
     },
-    avian3d::{math::Vector, prelude::*},
+    avian3d::{
+        math::{Scalar, Vector},
+        prelude::*,
+    },
     bevy::{app::App, prelude::*},
     minigolf::{CourseDetails, Player, PlayerInput, PlayerScore, PowerUp},
 };
@@ -22,6 +27,7 @@ impl Plugin for CoursePlugin {
         app.add_plugins(CourseEntitiesPlugin);
         app.add_plugins(PowerUpPlugin);
         app.add_plugins(CourseSetupPlugin);
+        app.add_plugins(CollisionEventsPlugin);
 
         app.register_type::<GameConfig>();
 
@@ -189,10 +195,13 @@ pub(crate) struct Hole {
     pub(crate) start_position: Vec3,
 }
 
+/// Height of the [HoleSensor], its top is level with the floor of the hole.
+pub(crate) const HOLE_SENSOR_HEIGHT: Scalar = 0.09;
+
 #[derive(Component, Reflect, Copy, Clone, Debug)]
 #[require(
     RigidBody::Static,
-    ColliderConstructor::Cuboid{ x_length: 0.2, y_length: 0.09, z_length: 0.2 },
+    ColliderConstructor::Cuboid{ x_length: 0.2, y_length: HOLE_SENSOR_HEIGHT, z_length: 0.2 },
     Sensor,
     CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
     CollidingEntities)]

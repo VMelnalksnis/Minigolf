@@ -1,9 +1,11 @@
+mod attractors;
 mod input;
 mod network;
 mod ui;
 
 use {
     crate::{
+        attractors::AttractorEffectPlugin,
         input::{AccumulatedInputs, MinigolfInputPlugin, camera::TargetTransform},
         network::{Authentication, ClientNetworkPlugin},
         ui::{ClientUiPlugin, ServerState},
@@ -29,6 +31,7 @@ fn main() -> AppExit {
             ClientNetworkPlugin,
             MinigolfPlugin,
             MinigolfInputPlugin,
+            AttractorEffectPlugin,
         ))
         .register_required_components::<Children, InheritedVisibility>()
         .add_systems(Startup, (set_window_title, setup_level))

@@ -4492,6 +4492,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "minigolf_cli"
+version = "0.1.0"
+dependencies = [
+ "aeronet",
+ "aeronet_replicon",
+ "aeronet_websocket",
+ "bevy",
+ "bevy_replicon",
+ "clap",
+ "minigolf",
+]
+
+[[package]]
 name = "minigolf_client"
 version = "0.1.0"
 dependencies = [

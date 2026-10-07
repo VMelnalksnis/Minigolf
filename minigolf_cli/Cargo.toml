@@ -1,0 +1,18 @@
+[package]
+name = "minigolf_cli"
+
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+minigolf = { path = "../minigolf" }
+
+bevy = { workspace = true, features = ["default_app", "std", "multi_threaded"] }
+clap = { workspace = true, features = ["derive"] }
+
+aeronet = { workspace = true }
+aeronet_websocket = { workspace = true, features = ["client"] }
+
+bevy_replicon = { workspace = true, features = ["client"] }
+aeronet_replicon = { workspace = true, features = ["client"] }

@@ -19,5 +19,8 @@ fi
 echo "Building lobby server"
 cargo build --bin minigolf_lobby --locked
 
+echo "Building command line client"
+cargo build --bin minigolf_cli --locked
+
 echo "Building game server"
 cargo build --bin minigolf_server --locked

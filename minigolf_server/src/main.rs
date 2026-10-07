@@ -273,7 +273,12 @@ pub(crate) struct Configuration {
 
     pub(crate) hole_magnet_min_distance: f32,
     pub(crate) hole_magnet_max_distance: f32,
+    /// Force (N) with which the hole pulls the ball.
     pub(crate) hole_magnet_strength: f32,
+
+    pub(crate) black_hole_bumper_distance: f32,
+    /// Force (N) with which a black hole bumper pulls balls.
+    pub(crate) black_hole_bumper_strength: f32,
 
     pub(crate) bumper_strength: f64,
 
@@ -289,7 +294,10 @@ impl Default for Configuration {
 
             hole_magnet_min_distance: 0.05,
             hole_magnet_max_distance: 0.2,
-            hole_magnet_strength: 50.0,
+            hole_magnet_strength: 0.4,
+
+            black_hole_bumper_distance: 0.2,
+            black_hole_bumper_strength: 1.6,
 
             bumper_strength: 0.1,
 

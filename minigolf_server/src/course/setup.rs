@@ -1,15 +1,15 @@
 use {
     crate::{
-        CourseState, GameLayer,
+        Configuration, CourseState, GameLayer,
         course::{
             Course, CurrentHole, Hole, HoleBoundingBox, HoleSensor, HoleWalls, PhysicsConfig,
-            entities::{BallMagnet, Bumper, JumpPad},
+            entities::{BUMPER_HEIGHT, Bumper, JumpPad},
         },
     },
     avian3d::prelude::*,
     bevy::prelude::*,
     bevy_replicon::prelude::*,
-    minigolf::{LevelMesh, PlayableArea, PowerUp, PowerUpType},
+    minigolf::{Attractor, LevelMesh, PlayableArea, PowerUp, PowerUpType},
     rand::prelude::*,
 };
 
@@ -306,6 +306,7 @@ impl SpawnBlackHoleBumper {
 fn spawn_black_hole_bumper_trigger(
     trigger: On<SpawnBlackHoleBumper>,
     current_hole: Res<CurrentHole>,
+    config: Res<Configuration>,
     mut commands: Commands,
 ) {
     let asset_path = "Entities.glb#Mesh1/Primitive0"; // todo: different from default bumper
@@ -320,6 +321,16 @@ fn spawn_black_hole_bumper_trigger(
         Replicated,
         LevelMesh::from_path(asset_path),
         ChildOf(current_hole.hole_entity),
-        children![(Name::new("Ball magnet"), BallMagnet::default(),)],
+        children![(
+            Name::new("Black hole"),
+            Attractor {
+                radius: config.black_hole_bumper_distance,
+                min_radius: 0.0,
+                strength: config.black_hole_bumper_strength,
+            },
+            // On the floor, below the center of the bumper.
+            Transform::from_xyz(0.0, -(BUMPER_HEIGHT / 2.0) as f32, 0.0),
+            Replicated,
+        )],
     ));
 }

@@ -4,7 +4,9 @@
       wind_strength: 0.3,
       hole_magnet_min_distance: 0.05,
       hole_magnet_max_distance: 0.2,
-      hole_magnet_strength: 50.0,
+      hole_magnet_strength: 0.4,
+      black_hole_bumper_distance: 0.2,
+      black_hole_bumper_strength: 1.6,
       bumper_strength: 0.1,
       jump_pad_strength: 0.2,
       courses: [

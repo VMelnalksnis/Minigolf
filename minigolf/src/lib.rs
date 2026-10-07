@@ -6,7 +6,7 @@ use {
         lobby::PlayerId,
         replication::{get_child_of_serialization_rules, register_replicated},
     },
-    bevy::prelude::*,
+    bevy::{ecs::entity::MapEntities, prelude::*},
     bevy_replicon::prelude::*,
     rand::{distr::StandardUniform, prelude::*},
     serde::{Deserialize, Serialize},
@@ -49,10 +49,13 @@ impl Plugin for MinigolfPlugin {
         register_replicated::<LevelMesh>(app);
         register_replicated::<PlayableArea>(app);
         register_replicated::<CourseEffect>(app);
+        register_replicated::<Attractor>(app);
 
         app.add_server_message::<RequestAuthentication>(Channel::Ordered);
         app.add_client_message::<AuthenticatePlayer>(Channel::Ordered);
         app.add_client_message::<PlayerInput>(Channel::Ordered);
+        // Reliable, so that tools like the CLI client can rely on seeing every collision.
+        app.add_mapped_server_message::<BallCollision>(Channel::Unordered);
     }
 }
 
@@ -114,6 +117,45 @@ pub enum CourseEffect {
     StickyWalls,
     /// The floor is slippery, see [PowerUpType::IceRink].
     IceRink,
+}
+
+/// Pulls balls towards itself along the floor while they are within its range, e.g. a black hole
+/// bumper or the hole when using the [PowerUpType::HoleMagnet] power up.
+#[derive(Component, Reflect, Serialize, Deserialize, Copy, Clone, PartialEq, Debug)]
+pub struct Attractor {
+    /// Distance from the center at which balls start being pulled.
+    pub radius: f32,
+    /// Distance from the center at which balls stop being pulled.
+    pub min_radius: f32,
+    /// Force (N) with which balls are pulled.
+    pub strength: f32,
+}
+
+/// A ball hitting or entering a part of the course, e.g. for playing sound effects.
+#[derive(Message, MapEntities, Serialize, Deserialize, Copy, Clone, PartialEq, Debug)]
+pub struct BallCollision {
+    #[entities]
+    pub ball: Entity,
+    pub target: CollisionTarget,
+    /// Position of the contact in world space.
+    pub position: Vec3,
+    /// Speed (m/s) of the impact, or of the ball when entering a sensor, e.g. the hole.
+    pub speed: f32,
+}
+
+/// What a ball collided with, see [BallCollision].
+#[derive(Reflect, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Debug)]
+pub enum CollisionTarget {
+    Floor,
+    Wall,
+    Bumper,
+    /// Another ball. Sent once per collision, for one of the balls.
+    Ball,
+    JumpPad,
+    /// The sensor of the hole that the ball has to get into.
+    Hole,
+    PowerUp,
+    Other,
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Debug)]

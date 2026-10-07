@@ -4,8 +4,8 @@ use {
         math::{Scalar, Vector},
         prelude::*,
     },
-    bevy::{app::App, ecs::entity::EntityHashSet, prelude::*},
-    minigolf::Player,
+    bevy::{app::App, prelude::*},
+    minigolf::{Attractor, Player},
 };
 
 pub(crate) struct CourseEntitiesPlugin;
@@ -14,15 +14,12 @@ impl Plugin for CourseEntitiesPlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<Bumper>();
         app.register_type::<JumpPad>();
-        app.register_type::<BallMagnet>();
+        app.register_type::<AttractsOnly>();
 
         app.add_systems(OnEnter(ServerState::Playing), setup);
 
-        app.add_systems(Update, add_required_ball_magnet_components); // todo
-        app.add_systems(
-            Update,
-            (despawn_bumpers, apply_ball_magnet).in_set(PlayingSystems),
-        );
+        app.add_systems(Update, despawn_bumpers.in_set(PlayingSystems));
+        app.add_systems(FixedUpdate, apply_attractors.in_set(PlayingSystems));
     }
 }
 
@@ -146,59 +143,35 @@ fn apply_jump_pad_impulse(
         .apply_linear_impulse(direction * config.jump_pad_strength);
 }
 
+/// Limits an [Attractor] to pull only the given ball.
 #[derive(Component, Reflect, Debug)]
-#[require(
-    RigidBody::Static,
-    CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-    CollidingEntities,
-    Sensor)]
-pub(crate) struct BallMagnet {
-    max_distance: Scalar,
-    strength: f32,
-}
+pub(crate) struct AttractsOnly(pub(crate) Entity);
 
-impl Default for BallMagnet {
-    fn default() -> Self {
-        BallMagnet {
-            max_distance: 0.2,
-            strength: 0.0125,
-        }
-    }
-}
-
-fn add_required_ball_magnet_components(
-    magnets: Query<(Entity, &BallMagnet), Added<BallMagnet>>,
-    mut commands: Commands,
-) {
-    magnets.iter().for_each(|(entity, ball_magnet)| {
-        commands.entity(entity).insert(ColliderConstructor::Sphere {
-            radius: ball_magnet.max_distance.to_owned(),
-        });
-    });
-}
-
-fn apply_ball_magnet(
-    magnets: Query<(Entity, &BallMagnet, &CollidingEntities)>,
-    mut players: Query<Entity, With<Player>>,
+pub(crate) fn apply_attractors(
+    attractors: Query<(&Attractor, &GlobalTransform, Option<&AttractsOnly>)>,
+    players: Query<(Entity, &GlobalTransform), With<Player>>,
     mut forces: Query<Forces>,
-    transforms: Query<&GlobalTransform>,
 ) {
-    let players_hash_set = EntityHashSet::from_iter(players.iter());
+    for (attractor, attractor_transform, attracts_only) in &attractors {
+        for (player, player_transform) in &players {
+            if attracts_only.is_some_and(|only| only.0 != player) {
+                continue;
+            }
 
-    for (magnet_entity, ball_magnet, colliding_entities) in magnets.iter() {
-        let magnet_transform = transforms.get(magnet_entity).unwrap();
+            // Only pull along the floor, the center can be below or above the ball.
+            let vector =
+                (attractor_transform.translation() - player_transform.translation()).with_y(0.0);
+            let distance = vector.length();
 
-        for player in colliding_entities.intersection(&players_hash_set) {
-            let player = players.get_mut(*player).unwrap();
+            if distance >= attractor.radius || distance <= attractor.min_radius {
+                continue;
+            }
 
-            let player_transform = transforms.get(player).unwrap();
-            let vector = magnet_transform.translation() - player_transform.translation();
-            let normalized = vector.normalize() * ball_magnet.strength;
-
+            let force = vector / distance * attractor.strength;
             forces
                 .get_mut(player)
                 .unwrap()
-                .apply_linear_impulse(Vector::from(normalized));
+                .apply_force(Vector::from(force));
         }
     }
 }
