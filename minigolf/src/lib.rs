@@ -241,6 +241,10 @@ impl PlayerPowerUps {
         }
     }
 
+    pub fn refund_power_up(&mut self, power_up: PowerUpType) {
+        self.power_ups.push(power_up);
+    }
+
     pub fn use_power_up(&mut self, power_up: PowerUpType) -> Option<PowerUpType> {
         if let Some(pos) = self.power_ups.iter().position(|x| *x == power_up) {
             Some(self.power_ups.remove(pos))

@@ -41,13 +41,16 @@ fn setup(mut commands: Commands) {
     ]);
 }
 
+pub(crate) const BUMPER_RADIUS: Scalar = 0.042672;
+pub(crate) const BUMPER_HEIGHT: Scalar = 0.05;
+
 /// Component for identifying bumper entities.
 #[derive(Component, Reflect, Debug)]
 #[require(
     RigidBody::Static,
     CollisionEventsEnabled,
     CollisionLayers::new(GameLayer::Default, [GameLayer::Player]),
-    ColliderConstructor::Cylinder{ radius: 0.042672, height: 0.05 })]
+    ColliderConstructor::Cylinder{ radius: BUMPER_RADIUS, height: BUMPER_HEIGHT })]
 pub(crate) struct Bumper {
     hits: Option<usize>,
 }

@@ -3,15 +3,16 @@ use {
         HoleState, LastPlayerPosition, PlayingSystems, ValidPlayerInput,
         course::{
             Configuration, CurrentHole, HoleSensor, HoleWalls,
+            entities::{BUMPER_HEIGHT, BUMPER_RADIUS},
             setup::{SpawnBlackHoleBumper, SpawnBumper},
         },
     },
     avian3d::{
-        math::{Scalar, Vector},
+        math::{Quaternion, Scalar, Vector},
         prelude::*,
     },
-    bevy::prelude::*,
-    minigolf::{CourseEffect, Player, PlayerInput, PlayerPowerUps, PowerUp},
+    bevy::{ecs::system::SystemParam, prelude::*},
+    minigolf::{CourseEffect, Player, PlayerInput, PlayerPowerUps, PowerUp, PowerUpType},
 };
 
 pub(crate) struct PowerUpPlugin;
@@ -67,6 +68,8 @@ fn apply_power_ups(
     mut commands: Commands,
     players: Query<Entity, With<Player>>,
     hole_walls: Query<(Entity, &HoleWalls)>,
+    bumper_placement: BumperPlacement,
+    mut power_ups: Query<&mut PlayerPowerUps>,
 ) {
     for &ValidPlayerInput { input, player } in reader.read() {
         match input {
@@ -93,18 +96,18 @@ fn apply_power_ups(
                 }
             }
 
-            PlayerInput::Bumper(translation) => {
-                // todo: have to validate and adjust the translation
-                commands.trigger(SpawnBumper::with_hits(Transform::from_translation(
-                    translation,
-                )));
-            }
+            PlayerInput::Bumper(translation) => match bumper_placement.place(translation) {
+                Some(transform) => commands.trigger(SpawnBumper::with_hits(transform)),
+                None => refund_power_up(player, PowerUpType::Bumper, &mut power_ups),
+            },
 
             PlayerInput::BlackHoleBumper(translation) => {
-                // todo: have to validate and adjust the translation
-                commands.trigger(SpawnBlackHoleBumper::with_hits(
-                    Transform::from_translation(translation),
-                ));
+                match bumper_placement.place(translation) {
+                    Some(transform) => {
+                        commands.trigger(SpawnBlackHoleBumper::with_hits(transform))
+                    }
+                    None => refund_power_up(player, PowerUpType::BlackHoleBumper, &mut power_ups),
+                }
             }
 
             PlayerInput::Wind(direction) => {
@@ -134,6 +137,83 @@ fn apply_power_ups(
                 warn!("Unhandled player input type {:?}", input);
             }
         }
+    }
+}
+
+/// Gives back a power up that was used for an input that could not be applied.
+fn refund_power_up(
+    player: Entity,
+    power_up: PowerUpType,
+    power_ups: &mut Query<&mut PlayerPowerUps>,
+) {
+    warn!(
+        "Could not apply power up {:?} for player {:?}, refunding it",
+        power_up, player
+    );
+
+    let Ok(mut player_power_ups) = power_ups.get_mut(player) else {
+        return;
+    };
+
+    player_power_ups.refund_power_up(power_up);
+}
+
+/// Distance above and below the requested position in which the floor of the current hole is
+/// searched for when placing a bumper.
+const BUMPER_FLOOR_SEARCH_DISTANCE: Scalar = 0.05;
+
+#[derive(SystemParam)]
+struct BumperPlacement<'w, 's> {
+    current_hole: Res<'w, CurrentHole>,
+    spatial_query: SpatialQuery<'w, 's>,
+    transforms: Query<'w, 's, &'static GlobalTransform>,
+    /// Sensors that a bumper can be placed in, e.g. power ups and the bounds of the hole, but not
+    /// the hole itself.
+    ignored_sensors: Query<'w, 's, (), (With<Sensor>, Without<HoleSensor>)>,
+}
+
+impl BumperPlacement<'_, '_> {
+    /// Gets the transform, relative to the current hole, of a bumper placed at the requested world
+    /// position.
+    ///
+    /// Returns `None` if the position is not on the floor of the current hole, or the bumper would
+    /// overlap with a ball, the walls, another bumper or the hole.
+    fn place(&self, translation: Vec3) -> Option<Transform> {
+        let hole_entity = self.current_hole.hole_entity;
+        let hole_transform = self.transforms.get(hole_entity).ok()?;
+
+        // The position comes from the client, so find the floor below it instead of trusting it.
+        let origin = Vector::from(translation) + Vector::Y * BUMPER_FLOOR_SEARCH_DISTANCE;
+        let floor_hit = self.spatial_query.cast_ray_predicate(
+            origin,
+            Dir3::NEG_Y,
+            BUMPER_FLOOR_SEARCH_DISTANCE * 2.0,
+            true,
+            &SpatialQueryFilter::default(),
+            &|entity| entity == hole_entity,
+        )?;
+
+        let center = origin - Vector::Y * (floor_hit.distance - BUMPER_HEIGHT / 2.0);
+
+        // Shorter than the bumper, so that it does not touch the floor or what is below it.
+        let shape = Collider::cylinder(BUMPER_RADIUS, BUMPER_HEIGHT / 2.0);
+        let blocked = self
+            .spatial_query
+            .shape_intersections(
+                &shape,
+                center,
+                Quaternion::IDENTITY,
+                &SpatialQueryFilter::default(),
+            )
+            .into_iter()
+            .any(|entity| entity != hole_entity && !self.ignored_sensors.contains(entity));
+
+        if blocked {
+            return None;
+        }
+
+        let world = GlobalTransform::from(Transform::from_translation(center.as_vec3()));
+        Some(world.reparented_to(hole_transform))
     }
 }
 
@@ -353,9 +433,9 @@ mod tests {
             course::{CurrentHole, Hole},
             move_player, player_can_move, reset_can_move,
         },
-        bevy::time::TimeUpdateStrategy,
+        bevy::{ecs::system::RunSystemOnce, time::TimeUpdateStrategy},
         minigolf::lobby::PlayerId,
-        std::time::Duration,
+        std::{f32::consts::PI, time::Duration},
     };
 
     #[test]
@@ -443,6 +523,68 @@ mod tests {
             (position.x - AGAINST_WALL_X).abs() < 0.002,
             "ball should roll along the wall and stick to the perpendicular wall, but is at {position}"
         );
+    }
+
+    #[test]
+    fn bumper_is_placed_on_floor_relative_to_hole() {
+        let mut app = app();
+        let hole = spawn_hole(&mut app);
+        step(&mut app, 1);
+
+        let transform = place_bumper(&mut app, Vec3::new(2.3, 0.0, 0.1)).unwrap();
+
+        let world = app
+            .world()
+            .get::<GlobalTransform>(hole)
+            .unwrap()
+            .transform_point(transform.translation);
+        let expected = Vec3::new(2.3, (BUMPER_HEIGHT / 2.0) as f32, 0.1);
+        assert!(
+            world.distance(expected) < 0.001,
+            "bumper should be at {expected}, but is at {world}"
+        );
+    }
+
+    #[test]
+    fn bumper_is_not_placed_outside_current_hole() {
+        let mut app = app();
+        spawn_hole(&mut app);
+        step(&mut app, 1);
+
+        assert_eq!(place_bumper(&mut app, Vec3::new(0.3, 0.0, 0.1)), None);
+    }
+
+    #[test]
+    fn bumper_is_not_placed_on_ball() {
+        let mut app = app();
+        spawn_hole(&mut app);
+        spawn_ball(&mut app, 2.3, 0.1);
+        step(&mut app, 1);
+
+        assert_eq!(place_bumper(&mut app, Vec3::new(2.32, 0.0, 0.1)), None);
+    }
+
+    /// Spawns the current hole with a floor at y = 0, offset and rotated like the holes of a
+    /// course.
+    fn spawn_hole(app: &mut App) -> Entity {
+        let hole = app
+            .world_mut()
+            .spawn((
+                Name::new("Hole"),
+                RigidBody::Static,
+                Collider::cuboid(1.0, 0.1, 1.0),
+                Transform::from_xyz(2.0, -0.05, 0.0).with_rotation(Quat::from_rotation_y(PI)),
+            ))
+            .id();
+
+        app.world_mut().resource_mut::<CurrentHole>().hole_entity = hole;
+        hole
+    }
+
+    fn place_bumper(app: &mut App, translation: Vec3) -> Option<Transform> {
+        app.world_mut()
+            .run_system_once(move |placement: BumperPlacement| placement.place(translation))
+            .unwrap()
     }
 
     const BALL_RADIUS: Scalar = 0.021336;
