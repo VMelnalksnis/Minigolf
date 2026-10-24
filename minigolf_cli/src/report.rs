@@ -142,7 +142,7 @@ fn report_spawned(spawned: Query<Entity, Added<Remote>>, describe: Describe) {
     }
 }
 
-fn report_despawned(remove: On<Remove, Remote>, describe: Describe) {
+fn report_despawned(remove: On<Remove<Remote>>, describe: Describe) {
     output!("despawn {}", describe.label(remove.entity));
 }
 

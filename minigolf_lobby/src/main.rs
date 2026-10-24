@@ -70,7 +70,7 @@ struct PlayerJoinedLobby(PlayerInLobby);
 struct PlayerDisconnected(PlayerInLobby);
 
 fn on_lobby_member_removed(
-    trigger: On<Remove, LobbyMember>,
+    trigger: On<Remove<LobbyMember>>,
     members: Query<(Entity, &LobbyMember), Without<Lobby>>,
     lobby: Query<(Entity, &LobbyMember), With<Lobby>>,
     players: Query<&Player>,

@@ -1,0 +1,38 @@
+# Copy of aeronet_replicon 0.22.0-rc.1 (https://github.com/aecsocket/aeronet, commit 82b2090e)
+# with bevy_replicon bumped from 0.44 to 0.45 for Bevy 0.20.
+
+[package]
+name = "aeronet_replicon"
+version = "0.22.0-rc.1"
+edition = "2024"
+rust-version = "1.95.0"
+description = "`aeronet` backend implementation for `bevy_replicon`"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/aecsocket/aeronet"
+
+[dependencies]
+aeronet_io = { version = "0.22.0-rc.1", default-features = false }
+aeronet_transport = { version = "0.22.0-rc.1", default-features = false }
+bevy_app = { version = "0.20.0", default-features = false }
+bevy_ecs = { version = "0.20.0", default-features = false }
+bevy_platform = { version = "0.20.0", default-features = false, features = ["alloc"] }
+bevy_reflect = { version = "0.20.0", default-features = false }
+bevy_replicon = { version = "0.45", default-features = false }
+bevy_state = { version = "0.20.0", default-features = false }
+document-features = { version = "0.2.11", optional = true }
+log = { version = "0.4.26" }
+
+[features]
+default = ["std"]
+## Enables support for `bevy_replicon/client`.
+client = ["bevy_replicon/client"]
+## Enable this when generating docs.
+document-features = ["dep:document-features"]
+## Enables support for `bevy_replicon/server`.
+server = ["bevy_replicon/server"]
+## Enables standard library support.
+std = ["aeronet_transport/std"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(docsrs_aeronet)"] }

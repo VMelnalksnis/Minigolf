@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["minigolf", "minigolf_cli", "minigolf_client", "minigolf_lobby", "minigolf_server"]
+exclude = ["patches"]
 
 [workspace.package]
 version = "0.1.0"
@@ -8,20 +9,20 @@ edition = "2024"
 authors = ["Valters Melnalksnis"]
 
 [workspace.dependencies]
-bevy = { version = "0.19.1", default-features = false }
-bevy_egui = { version = "0.40.1", default-features = true }
-bevy-inspector-egui = { version = "0.37.0", default-features = true }
-egui = { version = "0.34.3" }
-egui_dock = { version = "0.19.1" }
+bevy = { version = "0.20.0", default-features = false }
+bevy_egui = { version = "0.43.1", default-features = true }
+bevy-inspector-egui = { version = "0.38.0", default-features = true }
+egui = { version = "0.36.2" }
+egui_dock = { version = "0.21.1" }
 
-bevy_replicon = { version = "0.41.1", default-features = false }
+bevy_replicon = { version = "0.45.2", default-features = false }
 
-avian3d = { version = "0.7.0", default-features = false }
+avian3d = { version = "0.8.0", default-features = false }
 
-aeronet = { version = "0.21.0" }
-aeronet_websocket = { version = "0.21.0", default-features = false }
-aeronet_webtransport = { version = "0.21.0", default-features = false }
-aeronet_replicon = { version = "0.21.0", default-features = false }
+aeronet = { version = "0.22.0-rc.1" }
+aeronet_websocket = { version = "0.22.0-rc.1", default-features = false }
+aeronet_webtransport = { version = "0.22.0-rc.1", default-features = false }
+aeronet_replicon = { version = "0.22.0-rc.1", default-features = false }
 
 serde = "1.0.229"
 serde_json = "1.0.151"
@@ -32,6 +33,11 @@ web-sys = { version = "0.3.106", default-features = false }
 uuid = { version = "1.26.1", default-features = false }
 rand = { version = "0.10.3", default-features = true }
 getrandom = { version = "0.4.3", default-features = true }
+
+[patch.crates-io]
+# The published 0.22.0-rc.1 depends on bevy_replicon 0.44 (Bevy 0.19); this copy targets bevy_replicon 0.45.
+# Remove once aeronet_replicon is released for Bevy 0.20.
+aeronet_replicon = { path = "patches/aeronet_replicon" }
 
 # Enable a small amount of optimization in the dev profile.
 [profile.dev]

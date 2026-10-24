@@ -92,7 +92,7 @@ fn setup_level(mut commands: Commands) {
 }
 
 fn on_level_mesh_added(
-    add: On<Add, LevelMesh>,
+    add: On<Add<LevelMesh>>,
     query: Query<&LevelMesh>,
     server: Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -150,7 +150,7 @@ fn show_course_effects(
 }
 
 fn on_power_up_added(
-    add: On<Add, PowerUp>,
+    add: On<Add<PowerUp>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
@@ -176,7 +176,7 @@ fn on_power_up_added(
     ));
 }
 
-fn on_connected(_trigger: On<Add, Session>, mut game_state: ResMut<NextState<GameState>>) {
+fn on_connected(_trigger: On<Add<Session>>, mut game_state: ResMut<NextState<GameState>>) {
     game_state.set(GameState::Playing);
 }
 
@@ -185,7 +185,7 @@ fn on_disconnected(_trigger: On<Disconnected>, mut game_state: ResMut<NextState<
 }
 
 fn on_player_added(
-    add: On<Add, Player>,
+    add: On<Add<Player>>,
     server: Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,

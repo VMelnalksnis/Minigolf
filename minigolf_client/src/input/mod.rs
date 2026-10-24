@@ -125,7 +125,7 @@ pub(crate) enum InputTarget {
 }
 
 fn on_pointer_down(
-    trigger: On<Pointer<Press>>,
+    trigger: On<PointerPress>,
     players: Query<Entity, With<LocalPlayer>>,
     input_state: Res<State<InputState>>,
     mut input_target: ResMut<NextState<InputTarget>>,
@@ -146,7 +146,7 @@ fn on_pointer_down(
 }
 
 fn on_pointer_up(
-    _trigger: On<Pointer<Release>>,
+    _trigger: On<PointerRelease>,
     input_state: Res<State<InputState>>,
     mut writer: MessageWriter<PlayerInput>,
     mut inputs: Query<&mut AccumulatedInputs, With<LocalPlayer>>,
@@ -346,7 +346,7 @@ fn draw_accumulated_inputs(
 }
 
 fn teleport(
-    trigger: On<Pointer<Press>>,
+    trigger: On<PointerPress>,
     input_target: Res<State<InputTarget>>,
     playable_area: Query<Entity, With<PlayableArea>>,
     pointers: Query<&PointerInteraction>,
@@ -370,7 +370,7 @@ fn teleport(
 }
 
 fn place_bumper(
-    trigger: On<Pointer<Press>>,
+    trigger: On<PointerPress>,
     input_target: Res<State<InputTarget>>,
     playable_area: Query<Entity, With<PlayableArea>>,
     pointers: Query<&PointerInteraction>,
@@ -394,7 +394,7 @@ fn place_bumper(
 }
 
 fn place_black_hole_bumper(
-    trigger: On<Pointer<Press>>,
+    trigger: On<PointerPress>,
     input_target: Res<State<InputTarget>>,
     playable_area: Query<Entity, With<PlayableArea>>,
     pointers: Query<&PointerInteraction>,

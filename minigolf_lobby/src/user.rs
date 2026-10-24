@@ -5,7 +5,7 @@ use {
     },
     aeronet::io::{Session, bytes::Bytes, connection::LocalAddr, server::Server},
     aeronet_websocket::server::{ServerConfig, WebSocketServer},
-    bevy::{ecs::component::ComponentInfo, prelude::*},
+    bevy::prelude::*,
     minigolf::{
         Player, PlayerCredentials,
         lobby::user::{ClientPacket, LobbyMember, PlayerInLobby, ServerPacket},
@@ -51,7 +51,7 @@ fn open_listener(mut commands: Commands, args: Res<Args>) {
 }
 
 fn on_opened(
-    trigger: On<Add, Server>,
+    trigger: On<Add<Server>>,
     addresses: Query<&LocalAddr>,
     users: Query<&UserListener>,
 ) {
@@ -66,7 +66,7 @@ fn on_opened(
 }
 
 fn on_connected(
-    trigger: On<Add, Session>,
+    trigger: On<Add<Session>>,
     mut sessions: Query<&mut Session>,
     servers: Query<&ChildOf>,
     users: Query<&UserListener>,
@@ -103,15 +103,23 @@ fn handle_messages(
     for (user_session, mut session) in &mut sessions {
         let session = &mut *session;
 
+        // Components are inserted through deferred `Commands`, so packets handled later
+        // in this loop would not see them in the queries; track the session state locally.
+        let mut known_player = known_players
+            .get(user_session)
+            .ok()
+            .map(|(player, credentials)| (*player, credentials.clone()));
+        let mut lobby = members.get(user_session).ok().copied();
+
         for message in session.recv.drain(RangeFull::default()) {
             let client_packet = ClientPacket::from(message.payload.as_ref());
             info!("Client packet {client_packet:?}");
 
             match client_packet {
                 ClientPacket::Hello => {
-                    let (player, credentials) = match known_players.get(user_session) {
-                        Ok((player, credentials)) => (player.clone(), credentials.clone()),
-                        Err(_) => {
+                    let (player, credentials) = match &known_player {
+                        Some((player, credentials)) => (*player, credentials.clone()),
+                        None => {
                             let player = Player::new();
                             let credentials = PlayerCredentials::default();
 
@@ -120,6 +128,7 @@ fn handle_messages(
                             commands
                                 .entity(user_session)
                                 .insert((player, credentials.clone()));
+                            known_player = Some((player, credentials.clone()));
 
                             (player, credentials)
                         }
@@ -132,18 +141,24 @@ fn handle_messages(
 
                 ClientPacket::CreateLobby => {
                     let lobby_member = LobbyMember::new();
-                    let lobby = commands
+                    let lobby_entity = commands
                         .spawn((Lobby::new(user_session), lobby_member))
                         .id();
 
                     let message: String = ServerPacket::LobbyCreated(lobby_member.lobby_id).into();
                     session.send.push(Bytes::from_owner(message));
 
-                    commands.entity(lobby).insert(lobby_member);
+                    commands.entity(lobby_entity).insert(lobby_member);
                     commands.entity(user_session).insert(lobby_member);
+                    lobby = Some(lobby_member);
                 }
 
                 ClientPacket::JoinLobby(id) => {
+                    let Some((player, _)) = &known_player else {
+                        warn!("User {user_session} tried to join lobby {id} without a player");
+                        continue;
+                    };
+
                     let current_members = lobby_players
                         .iter()
                         .filter(|(_, l)| l.lobby_id == id)
@@ -153,9 +168,10 @@ fn handle_messages(
                     let message: String = ServerPacket::LobbyJoined(id, current_members).into();
                     session.send.push(Bytes::from_owner(message));
 
-                    let (player, _) = known_players.get(user_session).unwrap();
-                    commands.entity(user_session).insert(LobbyMember::from(id));
+                    let lobby_member = LobbyMember::from(id);
+                    commands.entity(user_session).insert(lobby_member);
                     commands.trigger(PlayerJoinedLobby(PlayerInLobby::new(id, player.id)));
+                    lobby = Some(lobby_member);
                 }
 
                 ClientPacket::ListLobbies => {
@@ -168,12 +184,16 @@ fn handle_messages(
                 }
 
                 ClientPacket::StartGame => {
-                    let user_lobby = members.get(user_session).unwrap();
+                    let Some(user_lobby) = &lobby else {
+                        warn!("User {user_session} tried to start a game without being in a lobby");
+                        continue;
+                    };
                     commands.trigger(StartGame::from(user_lobby));
                 }
 
                 ClientPacket::LeaveLobby => {
                     commands.entity(user_session).remove::<LobbyMember>();
+                    lobby = None;
                 }
             };
         }
@@ -181,7 +201,7 @@ fn handle_messages(
 }
 
 fn on_lobby_id_added(
-    trigger: On<Add, LobbyMember>,
+    trigger: On<Add<LobbyMember>>,
     world: &World,
     lobby_ids: Query<(Entity, &LobbyMember)>,
 ) {
@@ -194,7 +214,7 @@ fn on_lobby_id_added(
         world
             .inspect_entity(entity)
             .unwrap()
-            .map(ComponentInfo::name)
+            .map(|(_, info)| info.name())
             .collect::<Vec<_>>()
     );
 
@@ -208,7 +228,7 @@ fn on_lobby_id_added(
                 world
                     .inspect_entity(e)
                     .unwrap()
-                    .map(ComponentInfo::name)
+                    .map(|(_, info)| info.name())
                     .collect::<Vec<_>>()
             );
         });

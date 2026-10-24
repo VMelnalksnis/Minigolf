@@ -59,7 +59,7 @@ fn open_listener(mut commands: Commands, args: Res<Args>) {
 }
 
 fn on_opened(
-    trigger: On<Add, Server>,
+    trigger: On<Add<Server>>,
     addresses: Query<&LocalAddr>,
     games: Query<&GamerServerListener>,
 ) {
@@ -74,7 +74,7 @@ fn on_opened(
 }
 
 fn on_connected(
-    trigger: On<Add, Session>,
+    trigger: On<Add<Session>>,
     servers: Query<&ChildOf>,
     games: Query<&GamerServerListener>,
     mut commands: Commands,
@@ -139,7 +139,7 @@ fn handle_messages(
     }
 }
 
-fn on_game_server_added(trigger: On<Add, GameServer>, servers: Query<&GameServer>) {
+fn on_game_server_added(trigger: On<Add<GameServer>>, servers: Query<&GameServer>) {
     let connected_server = servers.get(trigger.entity).unwrap();
     let all_servers = &servers.iter().collect::<Vec<_>>();
 
@@ -147,7 +147,7 @@ fn on_game_server_added(trigger: On<Add, GameServer>, servers: Query<&GameServer
 }
 
 fn on_game_server_removed(
-    trigger: On<Remove, GameServer>,
+    trigger: On<Remove<GameServer>>,
     servers: Query<(Entity, &GameServer)>,
 ) {
     let remaining = &servers

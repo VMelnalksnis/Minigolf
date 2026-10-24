@@ -36,7 +36,7 @@ struct AttractorRing {
 
 /// Adds a disc showing the range of the attractor, with rings moving towards its center.
 fn on_attractor_added(
-    add: On<Add, Attractor>,
+    add: On<Add<Attractor>>,
     attractors: Query<&Attractor>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,

@@ -7,10 +7,7 @@ use {
             setup::{SpawnBlackHoleBumper, SpawnBumper},
         },
     },
-    avian3d::{
-        math::{Quaternion, Scalar, Vector},
-        prelude::*,
-    },
+    avian3d::{math::RVector, prelude::*},
     bevy::{ecs::system::SystemParam, prelude::*},
     bevy_replicon::prelude::*,
     minigolf::{
@@ -85,7 +82,7 @@ fn apply_power_ups(
             PlayerInput::Move(_) => {}
 
             PlayerInput::Teleport(translation) => {
-                let mut vec = Vector::from(translation);
+                let mut vec = RVector::from(translation);
                 vec.y = vec.y + 0.05;
 
                 commands.entity(player).insert(Position(vec));
@@ -113,7 +110,7 @@ fn apply_power_ups(
                     // On the top of the sensor, which is level with the floor.
                     Transform::from_translation(
                         sensor_transform
-                            .transform_point(Vec3::Y * (HOLE_SENSOR_HEIGHT / 2.0) as f32),
+                            .transform_point(Vec3::Y * (HOLE_SENSOR_HEIGHT / 2.0)),
                     ),
                     Replicated,
                     ChildOf(current_hole.hole_entity),
@@ -196,7 +193,7 @@ fn refund_power_up(
 
 /// Distance above and below the requested position in which the floor of the current hole is
 /// searched for when placing a bumper.
-const BUMPER_FLOOR_SEARCH_DISTANCE: Scalar = 0.05;
+const BUMPER_FLOOR_SEARCH_DISTANCE: f32 = 0.05;
 
 #[derive(SystemParam)]
 struct BumperPlacement<'w, 's> {
@@ -220,9 +217,9 @@ impl BumperPlacement<'_, '_> {
         let hole_transform = self.transforms.get(hole_entity).ok()?;
 
         // The position comes from the client, so find the floor below it instead of trusting it.
-        let origin = Vector::from(translation) + Vector::Y * BUMPER_FLOOR_SEARCH_DISTANCE;
+        let origin = translation + Vec3::Y * BUMPER_FLOOR_SEARCH_DISTANCE;
         let floor_hit = self.spatial_query.cast_ray_predicate(
-            origin,
+            origin.into(),
             Dir3::NEG_Y,
             BUMPER_FLOOR_SEARCH_DISTANCE * 2.0,
             true,
@@ -230,7 +227,7 @@ impl BumperPlacement<'_, '_> {
             &|entity| entity == hole_entity,
         )?;
 
-        let center = origin - Vector::Y * (floor_hit.distance - BUMPER_HEIGHT / 2.0);
+        let center = origin - Vec3::Y * (floor_hit.distance - BUMPER_HEIGHT / 2.0);
 
         // Shorter than the bumper, so that it does not touch the floor or what is below it.
         let shape = Collider::cylinder(BUMPER_RADIUS, BUMPER_HEIGHT / 2.0);
@@ -238,8 +235,8 @@ impl BumperPlacement<'_, '_> {
             .spatial_query
             .shape_intersections(
                 &shape,
-                center,
-                Quaternion::IDENTITY,
+                center.into(),
+                Quat::IDENTITY,
                 &SpatialQueryFilter::default(),
             )
             .into_iter()
@@ -255,7 +252,7 @@ impl BumperPlacement<'_, '_> {
             return None;
         }
 
-        let world = GlobalTransform::from(Transform::from_translation(center.as_vec3()));
+        let world = GlobalTransform::from(Transform::from_translation(center));
         Some(world.reparented_to(hole_transform))
     }
 }
@@ -313,8 +310,7 @@ fn apply_winds(
     }
 
     let direction: Vec2 = winds.iter().map(|wind| wind.direction.normalize()).sum();
-    let wind_force =
-        Vector::new(direction.x.into(), 0.0, direction.y.into()) * config.wind_strength;
+    let wind_force = Vec3::new(direction.x, 0.0, direction.y) * config.wind_strength;
 
     for player in players {
         if holes.iter().any(|colliding| colliding.contains(&player)) {
@@ -429,13 +425,13 @@ fn apply_sticky_effects(
         );
 
         commands.entity(player_entity).insert(Sleeping);
-        linear.0 = Vector::ZERO;
-        angular.0 = Vector::ZERO;
+        linear.0 = Vec3::ZERO;
+        angular.0 = Vec3::ZERO;
     }
 }
 
 /// Minimum speed (m/s) towards a wall at which a sticky effect is applied.
-const STICKY_MIN_APPROACH_SPEED: Scalar = 0.01;
+const STICKY_MIN_APPROACH_SPEED: f32 = 0.01;
 
 fn remove_sticky_ball(players: Query<Entity, With<Player>>, mut commands: Commands) {
     players.iter().for_each(|entity| {
@@ -452,6 +448,7 @@ mod tests {
             course::{CurrentHole, Hole, entities::apply_attractors},
             move_player, player_can_move, reset_can_move,
         },
+        avian3d::math::Real,
         bevy::{ecs::system::RunSystemOnce, time::TimeUpdateStrategy},
         minigolf::lobby::PlayerId,
         std::{f32::consts::PI, time::Duration},
@@ -557,7 +554,7 @@ mod tests {
             .get::<GlobalTransform>(hole)
             .unwrap()
             .transform_point(transform.translation);
-        let expected = Vec3::new(2.3, (BUMPER_HEIGHT / 2.0) as f32, 0.1);
+        let expected = Vec3::new(2.3, BUMPER_HEIGHT / 2.0, 0.1);
         assert!(
             world.distance(expected) < 0.001,
             "bumper should be at {expected}, but is at {world}"
@@ -693,12 +690,12 @@ mod tests {
             .unwrap()
     }
 
-    const BALL_RADIUS: Scalar = 0.021336;
+    const BALL_RADIUS: Real = 0.021336;
     /// Impulse that gives the ball a speed of about 1 m/s.
     const SHOT: f32 = 0.046;
 
     /// X coordinate of the ball's center when resting against the wall at x = 0.5.
-    const AGAINST_WALL_X: Scalar = 0.5 - 0.025 - BALL_RADIUS;
+    const AGAINST_WALL_X: Real = 0.5 - 0.025 - BALL_RADIUS;
 
     fn app() -> App {
         let mut app = App::new();
@@ -816,7 +813,7 @@ mod tests {
         }
     }
 
-    fn position(app: &App, ball: Entity) -> Vector {
+    fn position(app: &App, ball: Entity) -> RVector {
         app.world().get::<Position>(ball).unwrap().0
     }
 

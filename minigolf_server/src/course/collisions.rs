@@ -7,7 +7,7 @@ use {
             power_ups::StickyEffectSystems,
         },
     },
-    avian3d::{math::Scalar, prelude::*},
+    avian3d::prelude::*,
     bevy::{ecs::system::SystemParam, prelude::*},
     bevy_replicon::prelude::*,
     minigolf::{BallCollision, CollisionTarget, Player, PowerUp},
@@ -36,7 +36,7 @@ impl Plugin for CollisionEventsPlugin {
 }
 
 /// Minimum speed (m/s) towards a surface at which a contact counts as an impact.
-const MIN_IMPACT_SPEED: Scalar = 0.1;
+const MIN_IMPACT_SPEED: f32 = 0.1;
 
 #[derive(SystemParam)]
 struct CollisionTargets<'w, 's> {
@@ -122,7 +122,7 @@ fn send_impacts(
                     ball,
                     target,
                     position: impact.point.as_vec3(),
-                    speed: -impact.normal_speed as f32,
+                    speed: -impact.normal_speed,
                 },
             });
         }
@@ -158,7 +158,7 @@ fn send_sensor_entries(
             ball,
             target,
             position: position.0.as_vec3(),
-            speed: velocity.0.length() as f32,
+            speed: velocity.0.length(),
         },
     });
 }

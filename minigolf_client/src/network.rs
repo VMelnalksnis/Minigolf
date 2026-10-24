@@ -103,7 +103,7 @@ pub(crate) fn connect_to_lobby_server(target: &str, mut commands: Commands) {
         .queue(WebSocketClient::connect(config, target));
 }
 
-fn on_connecting(add: On<Add, SessionEndpoint>, names: Query<&Name>) {
+fn on_connecting(add: On<Add<SessionEndpoint>>, names: Query<&Name>) {
     let entity = add.entity;
     let name = names
         .get(entity)

@@ -22,7 +22,6 @@ pub struct MinigolfPlugin;
 
 /// Whether the game is currently being simulated or not.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, States)]
-#[states(scoped_entities)]
 pub enum GameState {
     /// Game is not being simulated.
     #[default]

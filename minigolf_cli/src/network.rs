@@ -148,7 +148,7 @@ fn authenticate(
 }
 
 fn on_connected(
-    add: On<Add, Session>,
+    add: On<Add<Session>>,
     lobby: Query<(), With<LobbySession>>,
     mut game_state: ResMut<NextState<GameState>>,
 ) {

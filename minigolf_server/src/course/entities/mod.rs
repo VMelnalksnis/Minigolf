@@ -1,9 +1,6 @@
 use {
     crate::{Configuration, GameLayer, PlayingSystems, ServerState},
-    avian3d::{
-        math::{Scalar, Vector},
-        prelude::*,
-    },
+    avian3d::prelude::*,
     bevy::{app::App, prelude::*},
     minigolf::{Attractor, Player},
 };
@@ -38,8 +35,8 @@ fn setup(mut commands: Commands) {
     ]);
 }
 
-pub(crate) const BUMPER_RADIUS: Scalar = 0.042672;
-pub(crate) const BUMPER_HEIGHT: Scalar = 0.05;
+pub(crate) const BUMPER_RADIUS: f32 = 0.042672;
+pub(crate) const BUMPER_HEIGHT: f32 = 0.05;
 
 /// Component for identifying bumper entities.
 #[derive(Component, Reflect, Debug)]
@@ -80,7 +77,7 @@ fn apply_bumper_impulse(
     };
 
     // todo: probably should handle collisions from above differently
-    let direction = (player_position.0 - bumper_position.0).normalize();
+    let direction = (player_position.0 - bumper_position.0).as_vec3().normalize();
 
     info!(
         "Applying bumper effect to player {:?} in direction {:?}",
@@ -130,7 +127,7 @@ fn apply_jump_pad_impulse(
     };
 
     // todo: can get stuck on jump pads when entering without enough horizontal velocity
-    let direction = Vector::Y;
+    let direction = Vec3::Y;
 
     info!(
         "Applying jump pad effect to player {:?} in direction {:?}",
@@ -171,7 +168,7 @@ pub(crate) fn apply_attractors(
             forces
                 .get_mut(player)
                 .unwrap()
-                .apply_force(Vector::from(force));
+                .apply_force(force);
         }
     }
 }

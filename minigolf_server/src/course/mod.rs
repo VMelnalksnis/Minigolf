@@ -12,10 +12,7 @@ use {
             power_ups::PowerUpPlugin, setup::CourseSetupPlugin,
         },
     },
-    avian3d::{
-        math::{Scalar, Vector},
-        prelude::*,
-    },
+    avian3d::prelude::*,
     bevy::{app::App, prelude::*},
     minigolf::{CourseDetails, Player, PlayerInput, PlayerScore, PowerUp},
 };
@@ -196,7 +193,7 @@ pub(crate) struct Hole {
 }
 
 /// Height of the [HoleSensor], its top is level with the floor of the hole.
-pub(crate) const HOLE_SENSOR_HEIGHT: Scalar = 0.09;
+pub(crate) const HOLE_SENSOR_HEIGHT: f32 = 0.09;
 
 #[derive(Component, Reflect, Copy, Clone, Debug)]
 #[require(
@@ -268,7 +265,7 @@ fn test(hole: Option<Res<CurrentHole>>, mut state: ResMut<NextState<CourseState>
 }
 
 fn on_hole_added(
-    trigger: On<Add, Hole>,
+    trigger: On<Add<Hole>>,
     mut course: Query<&mut Course>,
     hole: Query<&Hole>,
     mut commands: Commands,
@@ -365,8 +362,8 @@ fn handle_hole_bounding_box(
                 let (mut transform, mut linear, mut angular, last) =
                     transforms.get_mut(player_entity).unwrap();
 
-                linear.0 = Vector::ZERO;
-                angular.0 = Vector::ZERO;
+                linear.0 = Vec3::ZERO;
+                angular.0 = Vec3::ZERO;
 
                 info!("Last position: {last:?}");
                 // todo: ball rolls off the edge when last position set close to it, even though it was stable before respawning

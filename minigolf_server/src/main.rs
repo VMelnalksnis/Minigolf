@@ -5,7 +5,7 @@ use {
         network::{PlayerAuthenticated, ServerNetworkPlugin},
     },
     aeronet::io::connection::Disconnected,
-    avian3d::{math::Scalar, math::Vector, prelude::*},
+    avian3d::prelude::*,
     bevy::prelude::*,
     bevy_replicon::prelude::*,
     minigolf::{CourseDetails, MinigolfPlugin, Player, PlayerInput, PlayerPowerUps, PlayerScore},
@@ -66,7 +66,10 @@ pub(crate) fn get_ball_physics_bundle() -> impl Bundle {
         Collider::sphere(0.021336),
         CollisionLayers::new(GameLayer::Player, [GameLayer::Default]),
         Mass::from(0.04593),
-        SweptCcd::default(),
+        // Avian 0.7 behaviour: also sweep against other balls, and predict contacts with an
+        // unbounded speculative margin, which is opt-in since 0.8.
+        SweptCcd::default().with_filter(CcdFilter::ALL),
+        SpeculativeCcd::default(),
         CollisionEventsEnabled,
         Friction::new(0.2),
         Restitution::new(0.99),
@@ -146,7 +149,6 @@ impl Plugin for StatesPlugin {
 }
 
 #[derive(States, Reflect, Default, Clone, Eq, PartialEq, Hash, Debug)]
-#[states(scoped_entities)]
 enum ServerState {
     #[default]
     WaitingForLobby,
@@ -156,7 +158,6 @@ enum ServerState {
 
 /// The state of the current game, which consists of multiple courses.
 #[derive(SubStates, Reflect, Default, Debug, Clone, PartialEq, Eq, Hash)]
-#[states(scoped_entities)]
 #[source(ServerState = ServerState::Playing)]
 enum GameState {
     /// Waiting for all the players to connect.
@@ -169,7 +170,6 @@ enum GameState {
 
 /// The state of the current course, which consists of multiple holes.
 #[derive(SubStates, Reflect, Default, Debug, Clone, PartialEq, Eq, Hash)]
-#[states(scoped_entities)]
 #[source(GameState = GameState::Playing)]
 enum CourseState {
     /// Waiting for all the players to load.
@@ -182,7 +182,6 @@ enum CourseState {
 
 /// The state of the current hole.
 #[derive(SubStates, Reflect, Default, Debug, Clone, PartialEq, Eq, Hash)]
-#[states(scoped_entities)]
 #[source(CourseState = CourseState::Playing)]
 enum HoleState {
     #[default]
@@ -269,7 +268,7 @@ pub(crate) struct PlayerSession {
 #[derive(Resource, Reflect, Debug)]
 #[reflect(Resource)]
 pub(crate) struct Configuration {
-    pub(crate) wind_strength: Scalar,
+    pub(crate) wind_strength: f32,
 
     pub(crate) hole_magnet_min_distance: f32,
     pub(crate) hole_magnet_max_distance: f32,
@@ -280,9 +279,9 @@ pub(crate) struct Configuration {
     /// Force (N) with which a black hole bumper pulls balls.
     pub(crate) black_hole_bumper_strength: f32,
 
-    pub(crate) bumper_strength: f64,
+    pub(crate) bumper_strength: f32,
 
-    pub(crate) jump_pad_strength: f64,
+    pub(crate) jump_pad_strength: f32,
 
     pub(crate) courses: Vec<CourseDetails>,
 }
@@ -403,7 +402,7 @@ fn move_player(
         forces
             .get_mut(player)
             .unwrap()
-            .apply_linear_impulse(Vector::from(force_vec));
+            .apply_linear_impulse(force_vec);
     }
 }
 

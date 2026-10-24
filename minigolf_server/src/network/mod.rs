@@ -262,7 +262,7 @@ fn setup_waiting_for_players(
 }
 
 fn on_connected_while_waiting(
-    trigger: On<Add, AuthorizedClient>,
+    trigger: On<Add<AuthorizedClient>>,
     parent: Query<&ChildOf>,
     sessions: Query<Entity, (With<Session>, Without<PlayerCredentials>)>,
     mut writer: MessageWriter<ToClients<RequestAuthentication>>,
@@ -357,7 +357,7 @@ pub(crate) struct PlayerAuthenticated {
 
 // logging
 
-fn on_opened(trigger: On<Add, Server>, servers: Query<&LocalAddr>) {
+fn on_opened(trigger: On<Add<Server>>, servers: Query<&LocalAddr>) {
     let server = trigger.entity;
     let local_addr = servers
         .get(server)
@@ -365,11 +365,9 @@ fn on_opened(trigger: On<Add, Server>, servers: Query<&LocalAddr>) {
     info!("{server} opened on {}", **local_addr);
 }
 
-fn on_session_request(mut request: On<SessionRequest>, clients: Query<&ChildOf>) {
-    let client = request.entity;
-    let Ok(server) = clients.get(client).map(ChildOf::parent) else {
-        return;
-    };
+fn on_session_request(mut request: On<SessionRequest>) {
+    let client = request.session_entity;
+    let server = request.server_entity;
 
     info!("{client} connecting to {server} with headers:");
     for (header_key, header_value) in &request.headers {
@@ -380,7 +378,7 @@ fn on_session_request(mut request: On<SessionRequest>, clients: Query<&ChildOf>)
 }
 
 fn on_connected(
-    trigger: On<Add, Session>,
+    trigger: On<Add<Session>>,
     servers: Query<&ChildOf>,
     names: Query<&Name>,
     mut sessions: Query<&mut Session>,

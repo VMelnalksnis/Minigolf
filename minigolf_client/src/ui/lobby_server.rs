@@ -78,7 +78,7 @@ fn lobby_server_ui(
 }
 
 fn on_connected_to_lobby_server(
-    trigger: On<Add, Session>,
+    trigger: On<Add<Session>>,
     lobby_servers: Query<(&Session, &Name), With<LobbyServerSession>>,
     mut next_state: ResMut<NextState<ServerState>>,
 ) {
